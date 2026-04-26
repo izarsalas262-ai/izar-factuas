@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@layer base {
+  @media print {
+    .no-print {
+      display: none !important;
+    }
+    body {
+      background: white !important;
+      padding: 0 !important;
+    }
+    .print-only {
+      display: block !important;
+    }
+    .shadow-2xl, .shadow-xl, .shadow-lg, .shadow-md, .shadow-sm {
+      box-shadow: none !important;
+    }
+    .border-4 {
+      border-width: 1px !important;
+    }
+    .rounded-3xl, .rounded-2xl {
+      border-radius: 0 !important;
+    }
+  }
+}

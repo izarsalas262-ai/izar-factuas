@@ -1,0 +1,125 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Stock items available for sale",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "barcode": { "type": "string" },
+        "sellPrice": { "type": "number" },
+        "costPrice": { "type": "number" },
+        "wholesalePrice": { "type": "number" },
+        "stock": { "type": "number" },
+        "minStock": { "type": "number" },
+        "category": { "type": "string" },
+        "department": { "type": "string" },
+        "sellType": { "type": "string", "enum": ["unit", "weight"] },
+        "useInventory": { "type": "boolean" },
+        "image": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "sellPrice"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Transaction records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "tax": { "type": "number" },
+        "total": { "type": "number" },
+        "customerId": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "cashier": { "type": "string" },
+        "note": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["date", "total", "items"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Client information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "rnc": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "discountPercentage": { "type": "number" },
+        "balance": { "type": "number" }
+      },
+      "required": ["name"]
+    },
+    "User": {
+      "title": "User",
+      "description": "System operators",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "cajero"] },
+        "active": { "type": "boolean" },
+        "permissions": { "type": "object" },
+        "pin": { "type": "string" }
+      },
+      "required": ["username", "name", "role"]
+    },
+    "CashOut": {
+      "title": "Cash Out",
+      "description": "Cash withdrawal records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "amount": { "type": "number" },
+        "reason": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "cashier": { "type": "string" }
+      },
+      "required": ["amount", "reason", "date"]
+    }
+  },
+  "firestore": {
+    "businesses/{businessId}": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "ownerId": { "type": "string" },
+          "email": { "type": "string" },
+          "name": { "type": "string" },
+          "subscriptionEndDate": { "type": "string", "format": "date-time" },
+          "status": { "type": "string", "enum": ["active", "expired", "trial"] }
+        }
+      },
+      "description": "Metadata for a business/account"
+    },
+    "businesses/{businessId}/products": {
+      "schema": "Product",
+      "description": "Products catalog for a specific business"
+    },
+    "businesses/{businessId}/sales": {
+      "schema": "Sale",
+      "description": "Sales history for a specific business"
+    },
+    "businesses/{businessId}/customers": {
+      "schema": "Customer",
+      "description": "Customer list for a specific business"
+    },
+    "businesses/{businessId}/users": {
+        "schema": "User",
+        "description": "User accounts belonging to a business"
+    },
+    "businesses/{businessId}/cashouts": {
+      "schema": "CashOut",
+      "description": "Cash expenditure records"
+    }
+  }
+}
