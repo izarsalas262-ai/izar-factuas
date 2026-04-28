@@ -101,14 +101,14 @@ import { getAnalytics } from 'firebase/analytics';
 
 // Configuration consolidated from firebase-applet-config.json
 const firebaseConfig = {
-  projectId: "ygfacturacion-b010a",
-  appId: "1:444803907522:web:6543bcbf52758b196de05b",
-  apiKey: "AIzaSyAq1ybBJTIUnEGR3wHYcMT6rMrcnbsPYGo",
-  authDomain: "ygfacturacion-b010a.firebaseapp.com",
-  firestoreDatabaseId: "",
-  storageBucket: "ygfacturacion-b010a.firebasestorage.app",
-  messagingSenderId: "444803907522",
-  measurementId: "G-7XK95LNY9L"
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "facturacion-izar",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:873464345399:web:ac9ae2ed8b735a3fada0b2",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyCu6fuECK7OVHxvy0CK5G5lmL9KyDqNWkM",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "facturacion-izar.firebaseapp.com",
+  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || "",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "facturacion-izar.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "873464345399",
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-YWJD270EZ3"
 };
 
 // Initialize Firebase
@@ -502,8 +502,9 @@ export default function App() {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [businessInfo, setBusinessInfo] = useState<any>(null);
   const [allBusinesses, setAllBusinesses] = useState<any[]>([]);
-  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [showEmailForm, setShowEmailForm] = useState(true);
   const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
 
   const isSuperAdmin = useMemo(() => {
     return fbUser?.email === 'izar.salas262@gmail.com';
@@ -523,9 +524,15 @@ export default function App() {
 
   // Auth Listener
   useEffect(() => {
+    // Safety timeout to ensure isAuthLoading doesn't stay true forever
+    const safetyTimer = setTimeout(() => {
+      setIsAuthLoading(false);
+    }, 5000);
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setFbUser(user);
       setIsAuthLoading(false);
+      clearTimeout(safetyTimer);
       if (user) {
         testConnection();
       } else {
@@ -549,12 +556,12 @@ export default function App() {
 
   // Is Subscription Expired?
   const isSubscriptionExpired = useMemo(() => {
-    if (!fbUser || !businessInfo) return false;
-    if (!businessInfo.subscriptionEndDate) return false; // If no date, assume active or trial handled elsewhere
+    if (!fbUser || !businessInfo || isSuperAdmin) return false;
+    if (!businessInfo.subscriptionEndDate) return false; 
     
     const endDate = new Date(businessInfo.subscriptionEndDate);
     return new Date() > endDate;
-  }, [fbUser, businessInfo]);
+  }, [fbUser, businessInfo, isSuperAdmin]);
 
   // Cloud Sync Effect
   useEffect(() => {
@@ -581,23 +588,23 @@ export default function App() {
         setDoc(doc(db, 'businesses', busId), initialData);
         setBusinessInfo(initialData);
       }
-    });
+    }, (err) => handleFirestoreError(err, 'get', `businesses/${busId}`));
 
     // Subscribe to collections
     const unsubProducts = onSnapshot(collection(db, `businesses/${busId}/products`), (snap) => {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       if (data.length > 0) setProductsList(data as any);
-    });
+    }, (err) => handleFirestoreError(err, 'list', `businesses/${busId}/products`));
 
     const unsubSales = onSnapshot(collection(db, `businesses/${busId}/sales`), (snap) => {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       if (data.length > 0) setSalesHistory(data as any);
-    });
+    }, (err) => handleFirestoreError(err, 'list', `businesses/${busId}/sales`));
 
     const unsubCustomers = onSnapshot(collection(db, `businesses/${busId}/customers`), (snap) => {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       if (data.length > 0) setCustomersList(data as any);
-    });
+    }, (err) => handleFirestoreError(err, 'list', `businesses/${busId}/customers`));
 
     const unsubUsers = onSnapshot(collection(db, `businesses/${busId}/users`), (snap) => {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -609,12 +616,12 @@ export default function App() {
         setDoc(doc(db, `businesses/${busId}/users`, defaultAdmin.id.toString()), defaultAdmin);
         setUsersList([defaultAdmin]);
       }
-    });
+    }, (err) => handleFirestoreError(err, 'list', `businesses/${busId}/users`));
 
     const unsubCashOuts = onSnapshot(collection(db, `businesses/${busId}/cashouts`), (snap) => {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       if (data.length > 0) setCashOutsList(data as any);
-    });
+    }, (err) => handleFirestoreError(err, 'list', `businesses/${busId}/cashouts`));
 
     setIsSyncing(false);
 
@@ -630,56 +637,46 @@ export default function App() {
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!authEmail) {
-      showMessage('Por favor ingrese su correo', 'error');
+    if (!authEmail || !authPassword) {
+      showMessage('Por favor ingrese correo y contraseña', 'error');
       return;
     }
     
     setIsAuthLoading(true);
-    const internalPassword = `YG_POS_SYSTEM_2026`;
     
     try {
       console.log("Intentando login para:", authEmail);
-      await signInWithEmailAndPassword(auth, authEmail, internalPassword);
+      await signInWithEmailAndPassword(auth, authEmail, authPassword);
       console.log("Login exitoso en Firebase Auth");
       showMessage('Conexión establecida. Entrando...', 'success');
       
-      // FORZAR CIERRE DE LOGIN: No esperamos al useEffect para una mejor experiencia
+      // Limpiar password y cerrar formularios
+      setAuthPassword('');
       setShowEmailForm(false);
+      
+      // Intentar login inmediato con un admin o fallback
       const admin = usersList.find(u => u.role === 'admin' && u.active) || usersList[0] || DEFAULT_ADMIN;
+      console.log("Seleccionando usuario inicial:", admin.name);
       setCurrentUser(admin);
       setShowLogin(false);
       
     } catch (error: any) {
-      console.error("Error de autenticación:", error);
+      console.error("Error de autenticación completo:", error);
       
       if (error.code === 'auth/too-many-requests') {
-        showMessage('BLOQUEO TEMPORAL: Demasiados intentos fallidos. Espere unos minutos o use una PESTAÑA DE INCÓGNITO.', 'error');
-        return;
-      }
-      
-      if (error.code === 'auth/operation-not-allowed') {
-        showMessage('ERROR DE CONFIGURACIÓN: El inicio con Correo/Contraseña está desactivado en Firebase. Actívelo en Authentication > Sign-in method.', 'error');
-        return;
-      }
-      
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
-        // Intento automático de registro
-        try {
-          await createUserWithEmailAndPassword(auth, authEmail, internalPassword);
-          showMessage('Cuenta registrada. Entrando...', 'success');
-          setShowEmailForm(false);
-        } catch (createError: any) {
-          if (createError.code === 'auth/email-already-in-use') {
-            showMessage('ERROR: El correo ya existe pero la contraseña no coincide. Si lo creó manualmente en Firebase, debe usar la clave: ' + internalPassword, 'error');
-          } else if (createError.code === 'auth/invalid-email') {
-            showMessage('El correo ingresado no es válido.', 'error');
-          } else {
-            showMessage('Error de acceso: ' + createError.message, 'error');
-          }
-        }
+        showMessage('DEMASIADOS INTENTOS: Espere unos minutos antes de volver a intentar.', 'error');
+      } else if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+        showMessage('CREDENCIALES INCORRECTAS: Verifique su correo y contraseña.', 'error');
+      } else if (error.code === 'auth/user-not-found') {
+        showMessage('USUARIO NO ENCONTRADO: El correo no está registrado en Firebase.', 'error');
+      } else if (error.code === 'auth/invalid-email') {
+        showMessage('CORREO INVÁLIDO: El formato del correo no es correcto.', 'error');
+      } else if (error.code === 'auth/operation-not-allowed') {
+        showMessage('ERROR DE FIREBASE: El proveedor de Correo/Contraseña no está habilitado en la consola de Firebase.', 'error');
+      } else if (error.code === 'auth/network-request-failed') {
+        showMessage('ERROR DE RED: No hay conexión con los servidores de Firebase.', 'error');
       } else {
-        showMessage('Error: ' + error.message, 'error');
+        showMessage('ERROR: ' + (error.message || 'Ocurrió un problema al iniciar sesión'), 'error');
       }
     } finally {
       setIsAuthLoading(false);
@@ -1266,28 +1263,32 @@ export default function App() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    showMessage('Respaldo exportado con éxito', 'success');
+    showMessage('Copia de datos exportada con éxito', 'success');
   };
 
   // Auto-login app user after cloud sync completes
   useEffect(() => {
     if (fbUser && showLogin) {
-      // Si ya hay un usuario de la app seleccionado (ej. por persistencia local), cerramos el login
       if (currentUser) {
         setShowLogin(false);
         return;
       }
 
-      // Si no, buscamos al admin en la lista actual
+      // Probar selección inmediata si hay usuarios, o esperar un poco para sincronización
+      const selectUser = () => {
+        const admin = usersList.find(u => u.role === 'admin' && u.active) || usersList[0] || DEFAULT_ADMIN;
+        if (admin) {
+          console.log("Auto-login detectado para:", admin.name);
+          setCurrentUser(admin);
+          setShowLogin(false);
+          showMessage(`Bienvenido, ${admin.name}`, 'success');
+        }
+      };
+
       if (usersList.length > 0) {
-        const timer = setTimeout(() => {
-          const admin = usersList.find(u => u.role === 'admin' && u.active) || usersList[0];
-          if (admin) {
-            setCurrentUser(admin);
-            setShowLogin(false);
-            showMessage(`Acceso Maestro: ${admin.name}`, 'success');
-          }
-        }, 300);
+        selectUser();
+      } else {
+        const timer = setTimeout(selectUser, 1000);
         return () => clearTimeout(timer);
       }
     }
@@ -1319,7 +1320,7 @@ export default function App() {
       });
       const result = await response.json();
       if (result.success) {
-        showMessage('Respaldo automático guardado en carpeta RESPALDOS', 'success');
+        showMessage('Guardado automático realizado con éxito', 'success');
       } else {
         throw new Error(result.error);
       }
@@ -1358,7 +1359,7 @@ export default function App() {
             if (data.denominations) setCashDenominations(data.denominations);
             if (data.users && Array.isArray(data.users)) setUsersList(data.users);
 
-            showMessage('Respaldo restaurado con éxito', 'success');
+            showMessage('Copia de datos restaurada con éxito', 'success');
           }
         });
       } catch (error) {
@@ -1604,7 +1605,7 @@ export default function App() {
     localStorage.setItem('yg_cash_outs', JSON.stringify(cashOutsList));
   }, [cashOutsList]);
 
-  // Respaldo automático periódico
+  // Guardado automático periódico
   useEffect(() => {
     if (!backupConfig.autoBackup) return;
     const interval = setInterval(() => {
@@ -3075,16 +3076,14 @@ export default function App() {
               <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                 {!selectedUserForLogin ? (
                   <>
-                    {/* Cloud Login Section */}
+                    {/* Email Login Section */}
                     <div className="mb-6 p-6 bg-blue-50/50 rounded-[2rem] border-4 border-blue-100/50 flex flex-col items-center group hover:bg-blue-50 hover:border-blue-200 transition-all">
                        <div className="bg-white p-3 rounded-2xl shadow-sm border-2 border-blue-100 mb-3 group-hover:scale-110 transition-transform">
-                          <Cloud size={32} className="text-blue-500" />
+                          <User size={32} className="text-blue-500" />
                        </div>
-                       <h3 className="text-lg font-black text-blue-700 uppercase italic tracking-tighter mb-1">Dueño de Negocio</h3>
-                       <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-6 text-center">Accede a tu inventario en la nube y respaldos</p>
+                       <h3 className="text-lg font-black text-blue-700 uppercase italic tracking-tighter mb-4 text-center">Inicie Sesión en el Sistema</h3>
                        
                        {!fbUser ? (
-                         showEmailForm ? (
                            <form onSubmit={handleEmailAuth} className="w-full space-y-3 p-2 bg-white rounded-2xl border-2 border-blue-100 shadow-sm">
                               <div className="space-y-1">
                                  <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Correo Electrónico</label>
@@ -3097,33 +3096,27 @@ export default function App() {
                                    required
                                  />
                               </div>
+                              <div className="space-y-1">
+                                 <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Contraseña</label>
+                                 <input 
+                                   type="password" 
+                                   value={authPassword}
+                                   onChange={(e) => setAuthPassword(e.target.value)}
+                                   placeholder="••••••••"
+                                   className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl px-4 py-3 text-xs font-bold focus:border-blue-400 outline-none transition-all"
+                                   required
+                                 />
+                              </div>
                               <div className="pt-2 flex flex-col gap-2">
                                  <button 
                                    type="submit"
                                    disabled={isAuthLoading}
                                    className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-200 active:translate-y-1 transition-all disabled:opacity-50"
                                  >
-                                   {isAuthLoading ? 'CONECTANDO...' : 'ENTRAR AL SISTEMA AHORA'}
+                                   {isAuthLoading ? 'CONECTANDO...' : 'ENTRAR AL SISTEMA'}
                                  </button>
-                                 <div className="flex flex-col items-center gap-2 pt-2">
-                                    <button 
-                                      type="button"
-                                      onClick={() => setShowEmailForm(false)}
-                                      className="text-[10px] font-black text-gray-400 uppercase hover:text-red-500 transition-colors py-1"
-                                    >
-                                      Volver Atrás
-                                    </button>
-                                 </div>
                               </div>
                            </form>
-                         ) : (
-                           <button 
-                             onClick={() => setShowEmailForm(true)}
-                             className="w-full bg-blue-600 text-white py-4 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg shadow-blue-200 active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-3"
-                           >
-                             <Mail size={18} /> CONECTAR POR CORREO
-                           </button>
-                         )
                        ) : (
                          <div className="flex flex-col gap-4 w-full">
                            <div className="flex items-center justify-between gap-4 bg-white px-5 py-4 rounded-3xl border-4 border-blue-100 w-full animate-in fade-in slide-in-from-top-2 shadow-xl">
@@ -3321,7 +3314,7 @@ export default function App() {
                     className="flex items-center gap-2 bg-white/10 hover:bg-red-600/20 px-3 py-1.5 rounded-full border border-white/10 hover:border-red-400/50 transition-all group"
                   >
                     <CloudOff size={14} className="text-gray-400 group-hover:text-red-300" />
-                    <span className="text-[10px] font-black text-white/80 uppercase italic group-hover:text-white tracking-widest bg-clip-text">Subir a la Nube</span>
+                    <span className="text-[10px] font-black text-white/80 uppercase italic group-hover:text-white tracking-widest bg-clip-text">Sincronizar</span>
                   </button>
                 )}
               </div>
@@ -7346,19 +7339,19 @@ export default function App() {
 
                   <div className="bg-white p-6 rounded-3xl border-2 border-gray-100 shadow-sm text-left">
                     <h3 className="text-xl font-black text-gray-800 uppercase italic tracking-tighter mb-4 flex items-center gap-2">
-                        <Cloud size={20} className="text-blue-500" /> Sincronización en la Nube (SaaS)
+                        <Lock size={20} className="text-blue-500" /> Sincronización de Datos
                     </h3>
                     {!fbUser ? (
                         <div className="bg-blue-50 p-6 rounded-2xl border-2 border-blue-100 flex flex-col items-center text-center">
                             <CloudOff size={48} className="text-blue-300 mb-4" />
                             <p className="text-sm font-bold text-blue-700 leading-tight mb-4">
-                                ¡Vende en cualquier lugar! Sube tu negocio a la nube de Google para respaldar tus datos y vender desde múltiples dispositivos.
+                                Conecte su cuenta para sincronizar sus datos de forma segura.
                             </p>
                             <button 
                                 onClick={() => { setShowLogin(true); setShowEmailForm(true); }}
                                 className="w-full bg-blue-600 text-white py-3 rounded-xl font-black shadow-lg shadow-blue-200 active:translate-y-1 transition-all"
                             >
-                                ACTIVAR NUBE POR CORREO
+                                ACTIVAR SINCRONIZACIÓN
                             </button>
                         </div>
                     ) : (
@@ -7368,7 +7361,7 @@ export default function App() {
                                     <CheckCircle2 size={24} />
                                 </div>
                                 <div className="min-w-0">
-                                    <p className="text-[10px] font-black text-green-600 uppercase tracking-widest">Nube Activada</p>
+                                    <p className="text-[10px] font-black text-green-600 uppercase tracking-widest">Sincronización Activada</p>
                                     <p className="font-bold text-gray-800 truncate">{fbUser.email}</p>
                                 </div>
                             </div>
@@ -7379,14 +7372,14 @@ export default function App() {
                                 className="w-full bg-white border-2 border-blue-200 text-blue-600 py-4 rounded-xl font-black flex items-center justify-center gap-2 hover:bg-blue-50 transition-all disabled:opacity-50"
                             >
                                 {isSyncing ? <RefreshCw size={18} className="animate-spin" /> : <Upload size={18} />}
-                                SINCRONIZAR DATOS CON LA NUBE
+                                SINCRONIZAR DATOS AHORA
                             </button>
                             
                             <button 
                                 onClick={handleLogoutCloud}
                                 className="w-full text-red-500 text-[10px] font-black uppercase tracking-widest py-2 hover:bg-red-50 rounded-lg transition-all"
                             >
-                                Cerrar sesión de la nube
+                                Cerrar sesión administrativa
                             </button>
                             
                             <p className="text-[10px] text-gray-400 font-bold italic">
@@ -7596,10 +7589,10 @@ export default function App() {
 
                   <div className="bg-white p-6 rounded-3xl border-2 border-gray-100 shadow-sm text-left">
                     <h3 className="text-xl font-black text-gray-800 uppercase italic tracking-tighter mb-4 flex items-center gap-2">
-                       <Archive size={20} className="text-purple-500" /> Respaldos y Seguridad
+                       <Archive size={20} className="text-purple-500" /> Seguridad y Datos Locales
                     </h3>
                     <p className="text-[10px] font-bold text-gray-400 mb-6 italic">
-                      Proteja su información exportando una copia de seguridad o restaure datos previos.
+                      Proteja su información exportando una copia o restaure información previa.
                     </p>
                     <div className="grid grid-cols-2 gap-4">
                       <button 
@@ -7610,11 +7603,11 @@ export default function App() {
                         className="flex flex-col items-center justify-center gap-2 p-6 bg-purple-50 border-2 border-purple-100 rounded-2xl hover:bg-purple-100 transition-all group"
                       >
                         <Download size={32} className="text-purple-600 group-hover:scale-110 transition-transform" />
-                        <span className="text-xs font-black uppercase text-purple-700 tracking-widest text-center">Crear Respaldo</span>
+                        <span className="text-xs font-black uppercase text-purple-700 tracking-widest text-center">Exportar Datos</span>
                       </button>
                       <label className="flex flex-col items-center justify-center gap-2 p-6 bg-cyan-50 border-2 border-cyan-100 rounded-2xl hover:bg-cyan-100 transition-all group cursor-pointer">
                         <Upload size={32} className="text-cyan-600 group-hover:scale-110 transition-transform" />
-                        <span className="text-xs font-black uppercase text-cyan-700 tracking-widest text-center">Restaurar Datos</span>
+                        <span className="text-xs font-black uppercase text-cyan-700 tracking-widest text-center">Importar Datos</span>
                         <input 
                           type="file"
                           accept=".json"
@@ -7634,7 +7627,7 @@ export default function App() {
                             onChange={(e) => setBackupConfig({...backupConfig, autoBackup: e.target.checked})}
                             className="w-4 h-4 rounded-md border-2 border-purple-400 text-purple-500"
                           />
-                          <label htmlFor="auto-backup" className="text-[10px] font-black uppercase text-gray-600 cursor-pointer">Habilitar Respaldo Automático</label>
+                          <label htmlFor="auto-backup" className="text-[10px] font-black uppercase text-gray-600 cursor-pointer">Habilitar Guardado Automático</label>
                         </div>
                       </div>
 
