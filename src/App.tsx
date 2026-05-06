@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   ShoppingCart, 
@@ -1017,6 +1018,7 @@ export default function App() {
   });
 
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showLogin, setShowLogin] = useState(true);
   const [selectedUserForLogin, setSelectedUserForLogin] = useState<AppUser | null>(null);
   const [loginPin, setLoginPin] = useState('');
@@ -3280,12 +3282,18 @@ export default function App() {
           </div>
         )}
         <div className="max-w-[1800px] mx-auto px-4 lg:px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-8">
+          <div className="flex items-center gap-4 lg:gap-8">
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="md:hidden p-2 text-white hover:bg-red-800 rounded-xl transition-colors shrink-0"
+            >
+              <Menu size={28} />
+            </button>
             <div className="flex items-center gap-3">
-              <div className="bg-yellow-400 p-2 rounded-xl shadow-lg rotate-3">
+              <div className="bg-yellow-400 p-2 rounded-xl shadow-lg rotate-3 hidden sm:block">
                 <ShoppingCart className="text-red-700" size={28} />
               </div>
-              <h1 className="text-3xl font-black text-white tracking-tighter italic mr-4">Y.G <span className="text-yellow-400 uppercase">Facturación</span></h1>
+              <h1 className="text-xl sm:text-3xl font-black text-white tracking-tighter italic mr-1 sm:mr-4">Y.G <span className="text-yellow-400 uppercase">Facturación</span></h1>
 
               <div className="flex items-center gap-2">
                 {isAuthLoading ? (
@@ -3372,6 +3380,90 @@ export default function App() {
           </div>
         </div>
       </nav>
+
+      {/* Mobile Drawer Navigation */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="fixed inset-0 bg-red-900/60 backdrop-blur-sm z-[100] md:hidden"
+            />
+            <motion.div
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed inset-y-0 left-0 w-[280px] bg-red-700 z-[101] shadow-2xl md:hidden flex flex-col border-r-4 border-red-800"
+            >
+              <div className="p-6 bg-red-800 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="bg-yellow-400 p-2 rounded-xl shadow-lg rotate-3">
+                    <ShoppingCart className="text-red-700" size={24} />
+                  </div>
+                  <h2 className="text-xl font-black text-white tracking-tighter italic">Y.G <span className="text-yellow-400 uppercase">Menú</span></h2>
+                </div>
+                <button 
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="p-2 text-red-300 hover:text-white"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar">
+                {[
+                  { id: 'ventas', label: 'VENTAS', icon: ShoppingCart },
+                  { id: 'cotizaciones', label: 'COTIZACIONES', icon: FileText },
+                  { id: 'inventario', label: 'INVENTARIO', icon: ClipboardList, p: 'canManageInventory' },
+                  { id: 'productos', label: 'PRODUCTOS', icon: Tag, p: 'canManageProducts' },
+                  { id: 'clientes', label: 'CLIENTES', icon: Users, p: 'canManageCustomers' },
+                  { id: 'financiamiento', label: 'FINANZAS', icon: CreditCard, p: 'canViewFinances' },
+                  { id: 'corte', label: 'CORTE', icon: Calculator, p: 'canPerformCorte' },
+                  { id: 'config', label: 'CONFIG', icon: Settings, p: 'canManageSettings' },
+                ].filter(tab => !tab.p || currentUser?.role === 'admin' || (currentUser?.permissions as any)?.[tab.p]).map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      setCurrentView(tab.id as any);
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-black transition-all ${
+                      currentView === tab.id 
+                      ? 'bg-yellow-400 text-red-700 shadow-lg' 
+                      : 'text-red-100 hover:bg-red-650'
+                    }`}
+                  >
+                    <tab.icon size={24} />
+                    <span className="text-lg tracking-tight uppercase italic">{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="p-6 border-t border-red-600/50 bg-red-800/20">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-black text-xs">
+                    {currentUser?.name[0].toUpperCase() || 'A'}
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-red-300 uppercase tracking-widest leading-none">Usuario</p>
+                    <p className="text-sm font-black text-white italic">{currentUser?.name || 'Administrador'}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={handleLogout}
+                  className="w-full flex items-center justify-center gap-2 bg-yellow-400 text-red-700 py-3 rounded-xl font-black text-sm uppercase tracking-widest shadow-md hover:bg-yellow-300 transition-all"
+                >
+                  <LogOut size={18} /> CERRAR SESIÓN
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {globalMessage && (
@@ -3605,7 +3697,7 @@ export default function App() {
                   )}
                   
                   <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                    <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-4">
                       {(ventasDisplayMode === 'search' ? filteredProducts : quickProducts).map(product => (
                         <motion.div 
                           layout
@@ -4385,27 +4477,27 @@ export default function App() {
                     exit={{ opacity: 0 }}
                     className="absolute inset-0 z-[60] bg-yellow-500/95 backdrop-blur-md p-8 flex flex-col items-center justify-center overflow-y-auto"
                   >
-                    <div className="w-full max-w-lg bg-white rounded-[3rem] shadow-2xl p-8 border-8 border-yellow-300 relative">
+                    <div className="w-full max-w-lg bg-white rounded-[2rem] sm:rounded-[3rem] shadow-2xl p-6 sm:p-8 border-4 sm:border-8 border-yellow-300 relative">
                       <button 
                         onClick={() => setIsQuickAddOpen(false)}
-                        className="absolute -top-4 -right-4 bg-red-600 text-white p-3 rounded-full shadow-xl hover:bg-red-700 transition-colors"
+                        className="absolute -top-3 -right-3 sm:-top-4 sm:-right-4 bg-red-600 text-white p-2 sm:p-3 rounded-full shadow-xl hover:bg-red-700 transition-colors"
                       >
-                        <X size={24} />
+                        <X size={20} />
                       </button>
 
-                      <div className="flex items-center gap-4 mb-8">
-                        <div className="bg-yellow-100 p-4 rounded-3xl">
-                          <Zap size={32} className="text-yellow-600 fill-yellow-600" />
+                      <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
+                        <div className="bg-yellow-100 p-3 sm:p-4 rounded-2xl sm:rounded-3xl">
+                          <Zap className="w-6 h-6 sm:w-8 sm:h-8 text-yellow-600 fill-yellow-600" />
                         </div>
                         <div>
-                          <h3 className="text-3xl font-black text-gray-800 tracking-tighter uppercase">Alta Rápida</h3>
-                          <p className="text-gray-400 font-bold uppercase text-[10px] tracking-widest leading-none">Registro Express de Productos</p>
+                          <h3 className="text-xl sm:text-3xl font-black text-gray-800 tracking-tighter uppercase">Alta Rápida</h3>
+                          <p className="text-gray-400 font-bold uppercase text-[8px] sm:text-[10px] tracking-widest leading-none">Registro Express de Productos</p>
                         </div>
                       </div>
 
-                      <div className="space-y-6">
-                        <div className="space-y-2">
-                          <label className="font-black text-gray-700 uppercase text-xs tracking-widest pl-1">Código de Barras</label>
+                      <div className="space-y-4 sm:space-y-6">
+                        <div className="space-y-1 sm:space-y-2">
+                          <label className="font-black text-gray-700 uppercase text-[10px] tracking-widest pl-1">Código de Barras</label>
                           <input 
                             autoFocus
                             type="text"
@@ -4442,13 +4534,13 @@ export default function App() {
                                 document.getElementById('quick-name')?.focus();
                               }
                             }}
-                            className="w-full bg-yellow-50 border-4 border-yellow-100 rounded-2xl p-5 font-black text-2xl text-yellow-700 outline-none focus:border-yellow-300 transition-all placeholder:text-yellow-200"
+                            className="w-full bg-yellow-50 border-2 sm:border-4 border-yellow-100 rounded-xl sm:rounded-2xl p-3 sm:p-5 font-black text-lg sm:text-2xl text-yellow-700 outline-none focus:border-yellow-300 transition-all placeholder:text-yellow-200"
                             placeholder="00000000"
                           />
                         </div>
 
-                        <div className="space-y-2">
-                          <label className="font-black text-gray-700 uppercase text-xs tracking-widest pl-1">Nombre / Descripción</label>
+                        <div className="space-y-1 sm:space-y-2">
+                          <label className="font-black text-gray-700 uppercase text-[10px] tracking-widest pl-1">Nombre / Descripción</label>
                           <input 
                             id="quick-name"
                             type="text"
@@ -4457,16 +4549,16 @@ export default function App() {
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') document.getElementById('quick-price')?.focus();
                             }}
-                            className="w-full bg-gray-50 border-4 border-gray-100 rounded-2xl p-5 font-black text-2xl text-gray-700 outline-none focus:border-yellow-300 transition-all placeholder:text-gray-200"
+                            className="w-full bg-gray-50 border-2 sm:border-4 border-gray-100 rounded-xl sm:rounded-2xl p-3 sm:p-5 font-black text-lg sm:text-2xl text-gray-700 outline-none focus:border-yellow-300 transition-all placeholder:text-gray-200"
                             placeholder="Nombre del Producto"
                           />
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <label className="font-black text-gray-700 uppercase text-xs tracking-widest pl-1">Precio Venta</label>
+                        <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                          <div className="space-y-1 sm:space-y-2">
+                            <label className="font-black text-gray-700 uppercase text-[10px] tracking-widest pl-1">Precio Venta</label>
                             <div className="relative">
-                              <DollarSign className="absolute left-5 top-1/2 -translate-y-1/2 text-green-500" size={24} />
+                              <DollarSign className="absolute left-3 sm:left-5 top-1/2 -translate-y-1/2 text-green-500" size={18} sm:size={24} />
                               <input 
                                 id="quick-price"
                                 type="number"
@@ -4475,17 +4567,17 @@ export default function App() {
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') saveProduct();
                                 }}
-                                className="w-full bg-green-50 border-4 border-green-100 rounded-2xl p-5 pl-12 font-black text-2xl text-green-700 outline-none focus:border-green-300 transition-all"
+                                className="w-full bg-green-50 border-2 sm:border-4 border-green-100 rounded-xl sm:rounded-2xl p-3 sm:p-5 pl-8 sm:pl-12 font-black text-lg sm:text-2xl text-green-700 outline-none focus:border-green-300 transition-all"
                               />
                             </div>
                           </div>
-                          <div className="space-y-2">
-                            <label className="font-black text-gray-700 uppercase text-xs tracking-widest pl-1">Stock Inicial</label>
+                          <div className="space-y-1 sm:space-y-2">
+                            <label className="font-black text-gray-700 uppercase text-[10px] tracking-widest pl-1">Stock Inicial</label>
                             <input 
                               type="number"
                               value={productForm.currentStock || ''}
                               onChange={(e) => setProductForm({...productForm, currentStock: parseFloat(e.target.value) || 0})}
-                              className="w-full bg-blue-50 border-4 border-blue-100 rounded-2xl p-5 font-black text-2xl text-blue-700 outline-none focus:border-blue-300 transition-all"
+                              className="w-full bg-blue-50 border-2 sm:border-4 border-blue-100 rounded-xl sm:rounded-2xl p-3 sm:p-5 font-black text-lg sm:text-2xl text-blue-700 outline-none focus:border-blue-300 transition-all"
                             />
                           </div>
                         </div>
@@ -4851,8 +4943,8 @@ export default function App() {
                   {/* Columna Derecha: Datos */}
                   <div className="flex-1 space-y-6">
                     {/* Código de Barras */}
-                  <div className="flex flex-col md:flex-row md:items-center gap-4">
-                    <label className="w-48 font-bold text-gray-600">Código de Barras</label>
+                  <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
+                    <label className="w-full md:w-48 font-black text-gray-700 uppercase text-[10px] tracking-widest pl-1">Código de Barras</label>
                     <input 
                       ref={barcodeInputRef}
                       type="text"
@@ -4888,14 +4980,14 @@ export default function App() {
                           descriptionInputRef.current?.focus();
                         }
                       }}
-                      className="flex-1 max-w-md bg-yellow-50 border-2 border-yellow-200 rounded-xl p-3 font-bold text-gray-700 outline-none focus:border-yellow-400 transition-colors"
+                      className="flex-1 bg-yellow-50 border-2 border-yellow-200 rounded-xl p-3 font-bold text-gray-700 outline-none focus:border-yellow-400 transition-colors"
                       placeholder="Escanee o escriba el código..."
                     />
                   </div>
 
                   {/* Descripción */}
-                  <div className="flex flex-col md:flex-row md:items-center gap-4">
-                    <label className="w-48 font-bold text-gray-600">Descripción</label>
+                  <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
+                    <label className="w-full md:w-48 font-black text-gray-700 uppercase text-[10px] tracking-widest pl-1">Descripción</label>
                     <input 
                       ref={descriptionInputRef}
                       type="text"
@@ -4906,38 +4998,38 @@ export default function App() {
                   </div>
 
                   {/* Se vende por */}
-                  <div className="flex flex-col md:flex-row md:items-center gap-4">
-                    <label className="w-48 font-bold text-gray-600">Se vende</label>
-                    <div className="flex flex-wrap gap-6">
+                  <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
+                    <label className="w-full md:w-48 font-black text-gray-700 uppercase text-[10px] tracking-widest pl-1">Se vende</label>
+                    <div className="flex flex-wrap gap-2 sm:gap-6">
                       {[
                         { id: 'unit', label: 'Por Unidad/Pza' },
                         { id: 'bulk', label: 'A Granel (Usa Decimales)' },
                         { id: 'kit', label: 'Como paquete (kit)' },
                         { id: 'weight', label: 'Venta por Peso (Báscula)' },
                       ].map((type) => (
-                        <label key={type.id} className="flex items-center gap-2 cursor-pointer group">
+                        <label key={type.id} className="flex items-center gap-2 cursor-pointer group bg-gray-50 p-2 rounded-lg border border-transparent hover:border-yellow-200 transition-all">
                           <input 
                             type="radio"
                             name="sellType"
                             checked={productForm.sellType === type.id}
                             onChange={() => setProductForm({...productForm, sellType: type.id})}
-                            className="w-5 h-5 text-yellow-500 focus:ring-yellow-400 border-gray-300"
+                            className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-500 focus:ring-yellow-400 border-gray-300"
                           />
-                          <span className="font-bold text-gray-700 group-hover:text-yellow-600 transition-colors">{type.label}</span>
+                          <span className="font-bold text-gray-700 group-hover:text-yellow-600 transition-colors text-xs sm:text-sm">{type.label}</span>
                         </label>
                       ))}
                     </div>
                   </div>
 
                   {/* Precios */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
                     {[
                       { id: 'costPrice', label: 'Precio Costo' },
                       { id: 'sellPrice', label: 'Precio Venta' },
                       { id: 'wholesalePrice', label: 'Precio Mayoreo' },
                     ].map((price) => (
-                      <div key={price.id} className="space-y-2">
-                        <label className="font-bold text-gray-600">{price.label}</label>
+                      <div key={price.id} className="space-y-1 sm:space-y-2">
+                        <label className="font-black text-gray-700 uppercase text-[10px] tracking-widest pl-1">{price.label}</label>
                         <div className="relative">
                           <span className="absolute left-4 top-1/2 -translate-y-1/2 text-green-700 font-black">$</span>
                           <input 
@@ -4952,9 +5044,9 @@ export default function App() {
                   </div>
 
                   {/* Departamento */}
-                  <div className="flex flex-col md:flex-row md:items-center gap-4">
-                    <label className="w-48 font-bold text-gray-600">Departamento</label>
-                    <div className="relative flex-1 max-w-md">
+                  <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
+                    <label className="w-full md:w-48 font-black text-gray-700 uppercase text-[10px] tracking-widest pl-1">Departamento</label>
+                    <div className="relative flex-1">
                       <select 
                         value={productForm.department}
                         onChange={(e) => setProductForm({...productForm, department: e.target.value})}
@@ -4966,7 +5058,7 @@ export default function App() {
                       </select>
                       <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-yellow-600 pointer-events-none" size={20} />
                     </div>
-                    </div>
+                  </div>
                   </div>
                 </div>
 
@@ -6063,55 +6155,57 @@ export default function App() {
               className="w-full bg-white rounded-[2.5rem] shadow-2xl border-4 border-yellow-400 p-8 min-h-[600px] flex flex-col overflow-hidden"
             >
               {/* Header */}
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8 bg-gray-50 p-6 rounded-[2rem] border-2 border-gray-100">
-                <div className="flex items-center gap-4">
-                  <div className="bg-yellow-400 p-4 rounded-2xl text-white shadow-lg">
-                    <Calculator size={32} />
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 sm:gap-6 mb-6 sm:mb-8 bg-gray-50 p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 border-gray-100">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="bg-yellow-400 p-3 sm:p-4 rounded-2xl text-white shadow-lg shrink-0">
+                    <Calculator className="w-6 h-6 sm:w-8 sm:h-8" />
                   </div>
                   <div>
-                    <h2 className="text-4xl font-black text-gray-800 uppercase italic tracking-tighter leading-none">Corte de Caja</h2>
-                    <p className="text-gray-400 font-bold uppercase text-[10px] tracking-widest mt-1">Cuadre diario de ingresos</p>
+                    <h2 className="text-2xl sm:text-4xl font-black text-gray-800 uppercase italic tracking-tighter leading-none">Corte de Caja</h2>
+                    <p className="text-gray-400 font-bold uppercase text-[8px] sm:text-[10px] tracking-widest mt-1">Cuadre diario de ingresos</p>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-4 w-full md:w-auto no-print">
-                  <div className="flex-1 md:w-48 bg-white border-2 border-yellow-200 rounded-xl p-2 px-4 shadow-sm">
-                    <label className="block text-[8px] font-black text-yellow-600 uppercase tracking-widest">Fecha del Corte</label>
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4 w-full md:w-auto no-print">
+                  <div className="flex-1 min-w-[140px] md:w-48 bg-white border-2 border-yellow-200 rounded-xl p-2 px-3 sm:px-4 shadow-sm">
+                    <label className="block text-[8px] font-black text-yellow-600 uppercase tracking-widest leading-none mb-1">Fecha del Corte</label>
                     <input 
                       type="date"
                       value={corteDate}
                       onChange={(e) => setCorteDate(e.target.value)}
-                      className="w-full bg-transparent font-black text-gray-700 outline-none"
+                      className="w-full bg-transparent font-black text-sm sm:text-base text-gray-700 outline-none"
                     />
                   </div>
-                  <button 
-                    onClick={() => {
-                      window.print();
-                    }}
-                    className="bg-blue-600 text-white px-6 py-4 rounded-xl font-black flex items-center gap-2 hover:bg-blue-700 transition-all shadow-[0_4px_0_0_rgba(29,78,216,1)] active:translate-y-1 active:shadow-none"
-                  >
-                    <Printer size={20} /> IMPRIMIR
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setConfirmDialog({
-                        text: '¿Deseas finalizar el día y generar un respaldo automático en la carpeta RESPALDOS del servidor?',
-                        onConfirm: () => {
-                          handleAutoBackup();
-                          setCurrentView('ventas');
-                        }
-                      });
-                    }}
-                    className="bg-purple-600 text-white px-6 py-4 rounded-xl font-black flex items-center gap-2 hover:bg-purple-700 transition-all shadow-[0_4px_0_0_rgba(126,34,206,1)] active:translate-y-1 active:shadow-none"
-                  >
-                    <Save size={20} /> FINALIZAR DÍA
-                  </button>
-                  <button 
-                    onClick={() => setCurrentView('ventas')}
-                    className="bg-gray-200 text-gray-600 p-4 rounded-xl hover:bg-gray-300 transition-colors"
-                  >
-                    <X size={24} />
-                  </button>
+                  <div className="flex gap-2 w-full sm:w-auto">
+                    <button 
+                      onClick={() => {
+                        window.print();
+                      }}
+                      className="flex-1 sm:flex-none bg-blue-600 text-white px-4 sm:px-6 py-3 sm:py-4 rounded-xl font-black flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-[0_4px_0_0_rgba(29,78,216,1)] active:translate-y-1 active:shadow-none text-xs sm:text-base"
+                    >
+                      <Printer size={18} /> <span className="hidden xs:inline">IMPRIMIR</span>
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setConfirmDialog({
+                          text: '¿Deseas finalizar el día y generar un respaldo automático en la carpeta RESPALDOS del servidor?',
+                          onConfirm: () => {
+                            handleAutoBackup();
+                            setCurrentView('ventas');
+                          }
+                        });
+                      }}
+                      className="flex-1 sm:flex-none bg-purple-600 text-white px-4 sm:px-6 py-3 sm:py-4 rounded-xl font-black flex items-center justify-center gap-2 hover:bg-purple-700 transition-all shadow-[0_4px_0_0_rgba(126,34,206,1)] active:translate-y-1 active:shadow-none text-xs sm:text-base"
+                    >
+                      <Save size={18} /> <span className="hidden xs:inline">FINALIZAR</span>
+                    </button>
+                    <button 
+                      onClick={() => setCurrentView('ventas')}
+                      className="bg-gray-200 text-gray-600 p-3 sm:p-4 rounded-xl hover:bg-gray-300 transition-colors"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -6120,59 +6214,59 @@ export default function App() {
                 <div className="xl:col-span-2 space-y-8">
                   
                   {/* Cards de Resumen */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-                    <div className="bg-white p-6 rounded-3xl border-2 border-gray-100 shadow-sm group hover:border-yellow-400 transition-all">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Fondo Inicial</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
+                    <div className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-gray-100 shadow-sm group hover:border-yellow-400 transition-all">
+                      <p className="text-[8px] sm:text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Fondo Inicial</p>
                       <div className="relative group">
                         <span className="absolute left-0 top-1/2 -translate-y-1/2 font-black text-gray-300 group-focus-within:text-yellow-600 transition-colors">$</span>
                         <input 
                           type="number"
                           value={initialCash}
                           onChange={(e) => setInitialCash(parseFloat(e.target.value) || 0)}
-                          className="w-full pl-6 bg-transparent font-black text-2xl text-gray-800 outline-none focus:text-yellow-600 transition-colors border-b-2 border-transparent focus:border-yellow-200"
+                          className="w-full pl-4 bg-transparent font-black text-lg sm:text-2xl text-gray-800 outline-none focus:text-yellow-600 transition-colors border-b-2 border-transparent focus:border-yellow-200"
                           placeholder="0.00"
                         />
                       </div>
-                      <p className="text-[8px] font-bold text-gray-300 uppercase mt-1">Efectivo en base</p>
+                      <p className="text-[7px] sm:text-[8px] font-bold text-gray-300 uppercase mt-1">Efectivo en base</p>
                     </div>
-                    <div className="bg-green-50 p-6 rounded-3xl border-2 border-green-200 shadow-sm relative overflow-hidden">
-                      <p className="text-[10px] font-black text-green-600 uppercase tracking-widest mb-1 truncate" title="Efectivo Neto">Efectivo Neto</p>
-                      <p className="text-xl md:text-2xl font-black text-green-700 truncate" title={`$${dailySummary.cash.toFixed(2)}`}>
+                    <div className="bg-green-50 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-green-200 shadow-sm relative overflow-hidden">
+                      <p className="text-[8px] sm:text-[10px] font-black text-green-600 uppercase tracking-widest mb-1 truncate" title="Efectivo Neto">Efectivo Neto</p>
+                      <p className="text-lg md:text-2xl font-black text-green-700 truncate" title={`$${dailySummary.cash.toFixed(2)}`}>
                         ${dailySummary.cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </p>
-                      <p className="text-[9px] font-bold text-green-500 uppercase mt-1 flex items-center gap-1 truncate">
+                      <p className="text-[8px] sm:text-[9px] font-bold text-green-500 uppercase mt-1 flex items-center gap-1 truncate">
                         <ArrowUpCircle size={10} /> Ingresos - Gastos
                       </p>
                     </div>
-                    <div className="bg-blue-50 p-6 rounded-3xl border-2 border-blue-200 shadow-sm">
-                      <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1 truncate" title="Bancos / Tarjetas">Bancos / Tarjetas</p>
-                      <p className="text-xl md:text-2xl font-black text-blue-700 truncate" title={`$${(dailySummary.card + dailySummary.transfer).toFixed(2)}`}>
+                    <div className="bg-blue-50 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-blue-200 shadow-sm">
+                      <p className="text-[8px] sm:text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1 truncate" title="Bancos / Tarjetas">Bancos / Tarjetas</p>
+                      <p className="text-lg md:text-2xl font-black text-blue-700 truncate" title={`$${(dailySummary.card + dailySummary.transfer).toFixed(2)}`}>
                         ${(dailySummary.card + dailySummary.transfer).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </p>
-                      <p className="text-[9px] font-bold text-blue-400 uppercase mt-1 truncate">No físico en caja</p>
+                      <p className="text-[8px] sm:text-[9px] font-bold text-blue-400 uppercase mt-1 truncate">No físico en caja</p>
                     </div>
-                    <div className="bg-emerald-50 p-6 rounded-3xl border-2 border-emerald-200 shadow-sm relative overflow-hidden">
-                      <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1 truncate" title="Ventas USD">Ventas USD</p>
-                      <p className="text-xl md:text-2xl font-black text-emerald-700 truncate" title={`$${dailySummary.dolares.toFixed(2)}`}>
+                    <div className="bg-emerald-50 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-emerald-200 shadow-sm relative overflow-hidden">
+                      <p className="text-[8px] sm:text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1 truncate" title="Ventas USD">Ventas USD</p>
+                      <p className="text-lg md:text-2xl font-black text-emerald-700 truncate" title={`$${dailySummary.dolares.toFixed(2)}`}>
                         ${dailySummary.dolares.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </p>
-                      <span className="text-[9px] font-bold text-emerald-500 uppercase truncate">Equiv. en Pesos</span>
-                      <DollarSign className="absolute -right-2 -bottom-2 text-emerald-100 w-16 h-16 rotate-12" />
+                      <span className="text-[8px] sm:text-[9px] font-bold text-emerald-500 uppercase truncate">Equiv. en Pesos</span>
+                      <DollarSign className="absolute -right-2 -bottom-2 text-emerald-100 w-12 h-12 sm:w-16 sm:h-16 rotate-12 opacity-50" />
                     </div>
-                    <div className="bg-red-50 p-6 rounded-3xl border-2 border-red-200 shadow-sm">
-                      <p className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-1 truncate" title="Total Gastos">Total Gastos</p>
-                      <p className="text-xl md:text-2xl font-black text-red-700 truncate" title={`-$${dailySummary.expenses.toFixed(2)}`}>
+                    <div className="bg-red-50 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-red-200 shadow-sm">
+                      <p className="text-[8px] sm:text-[10px] font-black text-red-600 uppercase tracking-widest mb-1 truncate" title="Total Gastos">Total Gastos</p>
+                      <p className="text-lg md:text-2xl font-black text-red-700 truncate" title={`-$${dailySummary.expenses.toFixed(2)}`}>
                         -${dailySummary.expenses.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </p>
-                      <p className="text-[9px] font-bold text-red-400 uppercase mt-1 truncate">Salidas registradas</p>
+                      <p className="text-[8px] sm:text-[9px] font-bold text-red-400 uppercase mt-1 truncate">Salidas registradas</p>
                     </div>
-                    <div className="bg-yellow-400 p-6 rounded-3xl shadow-xl shadow-yellow-100 relative overflow-hidden border-4 border-white transform hover:scale-105 transition-transform">
-                      <p className="text-[10px] font-black text-yellow-900 uppercase tracking-widest mb-1 relative z-10 truncate" title="Balance de Caja">Balance de Caja</p>
+                    <div className="bg-yellow-400 p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-xl shadow-yellow-100 relative overflow-hidden border-2 sm:border-4 border-white transform hover:scale-105 transition-transform">
+                      <p className="text-[8px] sm:text-[10px] font-black text-yellow-900 uppercase tracking-widest mb-1 relative z-10 truncate" title="Balance de Caja">Balance de Caja</p>
                       <p className="text-xl md:text-2xl font-black text-red-700 relative z-10 leading-none truncate" title={`$${(initialCash + dailySummary.cash + dailySummary.dolares).toFixed(2)}`}>
                         ${(initialCash + dailySummary.cash + dailySummary.dolares).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </p>
-                      <p className="text-[9px] font-black text-red-800 uppercase mt-2 relative z-10 opacity-60 truncate">Efectivo total esperado</p>
-                      <Zap className="absolute -right-4 -bottom-4 text-white/40 w-24 h-24 rotate-12" />
+                      <p className="text-[8px] sm:text-[9px] font-black text-red-800 uppercase mt-2 relative z-10 opacity-60 truncate">Total esperado</p>
+                      <Zap className="absolute -right-4 -bottom-4 text-white/40 w-16 h-16 sm:w-24 sm:h-24 rotate-12" />
                     </div>
                   </div>
 
@@ -6185,7 +6279,7 @@ export default function App() {
                       <h3 className="font-black text-gray-700 uppercase tracking-widest text-xs">Reporte de Ganancias (Beneficio Neto)</h3>
                     </div>
                     
-                    <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-2 xs:grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
                       {[
                         { label: 'Hoy', val: profitStats.diario, color: 'text-green-600', bg: 'bg-green-50' },
                         { label: '7 Días', val: profitStats.semanal, color: 'text-blue-600', bg: 'bg-blue-50' },
@@ -6193,9 +6287,9 @@ export default function App() {
                         { label: 'Mensual', val: profitStats.mensual, color: 'text-purple-600', bg: 'bg-purple-50' },
                         { label: 'Anual', val: profitStats.anual, color: 'text-orange-600', bg: 'bg-orange-50' },
                       ].map((stat, i) => (
-                        <div key={i} className={`${stat.bg} p-4 rounded-2xl border border-transparent hover:border-gray-200 transition-all text-center min-w-0`}>
-                          <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 truncate">{stat.label}</p>
-                          <p className={`text-lg md:text-xl font-black ${stat.color} truncate`} title={`$${stat.val.toFixed(2)}`}>
+                        <div key={i} className={`${stat.bg} p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-transparent hover:border-gray-200 transition-all text-center min-w-0`}>
+                          <p className="text-[8px] sm:text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 truncate">{stat.label}</p>
+                          <p className={`text-sm sm:text-lg md:text-xl font-black ${stat.color} truncate`} title={`$${stat.val.toFixed(2)}`}>
                             ${stat.val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </p>
                         </div>
