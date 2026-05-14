@@ -68,8 +68,23 @@ import {
   Cloud,
   CloudOff,
   RefreshCw,
-  Mail
+  Mail,
+  Ban,
+  RotateCcw,
+  Hash,
+  Type,
+  Bold
 } from 'lucide-react';
+
+const AVAILABLE_FONTS = [
+  { name: 'Standard (Sans)', value: '"Inter", sans-serif' },
+  { name: 'Modern (Grotesk)', value: '"Space Grotesk", sans-serif' },
+  { name: 'Classic (Serif)', value: '"Playfair Display", serif' },
+  { name: 'Technical (Mono)', value: '"JetBrains Mono", monospace' },
+  { name: 'Elegant (Outfit)', value: '"Outfit", sans-serif' },
+  { name: 'Impact (Anton)', value: '"Anton", sans-serif' },
+  { name: 'Handwritten (Satisfy)', value: '"Satisfy", cursive' }
+];
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { initializeApp } from 'firebase/app';
@@ -218,6 +233,7 @@ interface Sale {
     received: number;
     changeDop: number;
   };
+  status: 'completada' | 'cancelada' | 'devuelta';
 }
 
 interface Promotion {
@@ -853,6 +869,10 @@ export default function App() {
     }
   });
 
+  const [salesSearchTerm, setSalesSearchTerm] = useState('');
+  const [salesDateFilter, setSalesDateFilter] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedSaleDetail, setSelectedSaleDetail] = useState<Sale | null>(null);
+
   const [cashOutsList, setCashOutsList] = useState<CashOut[]>(() => {
     try {
       const saved = localStorage.getItem('yg_cash_outs');
@@ -890,9 +910,11 @@ export default function App() {
         showLogo: true,
         logo: 'https://picsum.photos/seed/shop/200/200',
         printSize: '80mm',
-        openDrawerOnPrint: true
+        openDrawerOnPrint: true,
+        fontFamily: '"Inter", sans-serif',
+        isBold: false
       };
-      return saved ? JSON.parse(saved) : defaultTicket;
+      return saved ? { ...defaultTicket, ...JSON.parse(saved) } : defaultTicket;
     } catch {
       return {
         storeName: 'Y.G Facturación',
@@ -1114,6 +1136,7 @@ export default function App() {
                 paymentMethod: 'efectivo',
                 cashier: 'Administrador Demo',
                 customerId: Math.random() > 0.5 ? 201 : null,
+                status: 'completada' as const,
                 usdInfo: { rate: 60, received: 0, changeDop: 0 }
             });
         }
@@ -1961,6 +1984,20 @@ export default function App() {
     );
   }, [searchTerm, productsList]);
 
+  const filteredSalesHistory = useMemo(() => {
+    return salesHistory.filter(sale => {
+      const saleDate = sale.date.split('T')[0];
+      const matchesDate = !salesDateFilter || saleDate === salesDateFilter;
+      const customer = customersList.find(c => c.id === sale.customerId);
+      const matchesSearch = !salesSearchTerm || 
+        sale.id.toString().includes(salesSearchTerm) ||
+        sale.cashier.toLowerCase().includes(salesSearchTerm.toLowerCase()) ||
+        (customer && customer.name.toLowerCase().includes(salesSearchTerm.toLowerCase()));
+      
+      return matchesDate && matchesSearch;
+    });
+  }, [salesHistory, salesSearchTerm, salesDateFilter, customersList]);
+
   const lowStockProducts = useMemo(() => {
     return productsList.filter(p => 
       p.useInventory && 
@@ -2139,9 +2176,10 @@ export default function App() {
         <head>
           <title>Cotización - ${quot.customerName}</title>
           <style>
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=JetBrains+Mono:wght@400;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Space+Grotesk:wght@400;700&family=Outfit:wght@400;700&family=Anton&family=Satisfy&display=swap');
             body { 
-              font-family: ${isOffice ? "'Inter', sans-serif" : "'Courier New', Courier, monospace"}; 
+              font-family: ${ticketConfig.fontFamily || (isOffice ? "'Inter', sans-serif" : "'Courier New', Courier, monospace")}; 
+              font-weight: ${ticketConfig.isBold ? 'bold' : 'normal'};
               width: ${width}; 
               margin: 0 auto; 
               padding: ${padding};
@@ -2299,6 +2337,71 @@ export default function App() {
   
   const change = Math.max(0, (parseFloat(paidAmount) || 0) - total);
 
+  const handleCancelSale = (sale: Sale) => {
+    if (sale.status === 'cancelada') {
+      showMessage('Esta factura ya está cancelada', 'error');
+      return;
+    }
+
+    setConfirmDialog({
+      text: `¿Estás seguro de que deseas cancelar la factura #${sale.id.toString().slice(-6)}? El stock será restaurado.`,
+      onConfirm: () => {
+        // 1. Restaurar stock
+        setProductsList(prev => {
+          const newList = [...prev];
+          sale.items.forEach(saleItem => {
+            const productIndex = newList.findIndex(p => p.id === saleItem.id || p.barcode === saleItem.barcode);
+            if (productIndex !== -1 && newList[productIndex].useInventory) {
+              newList[productIndex].currentStock += saleItem.quantity;
+              newList[productIndex].stock = newList[productIndex].currentStock; 
+            }
+          });
+          return newList;
+        });
+
+        // 2. Actualizar estado de la venta
+        const updatedSale = { ...sale, status: 'cancelada' as const };
+        setSalesHistory(prev => prev.map(s => s.id === sale.id ? updatedSale : s));
+        
+        // 3. Sincronizar con la nube si aplica
+        cloudSync.saveSale(updatedSale);
+        
+        showMessage('Factura cancelada y stock restaurado', 'success');
+      }
+    });
+  };
+
+  const handleReturnItem = (sale: Sale, itemIndex: number, returnQty: number) => {
+    const item = sale.items[itemIndex];
+    if (returnQty > item.quantity) {
+      showMessage('La cantidad a devolver excede lo vendido', 'error');
+      return;
+    }
+
+    setConfirmDialog({
+      text: `¿Deseas procesar la devolución de ${returnQty} unidades de "${item.name}"?`,
+      onConfirm: () => {
+        // 1. Restaurar stock del item devuelto
+        setProductsList(prev => {
+          const newList = [...prev];
+          const productIndex = newList.findIndex(p => p.id === item.id || p.barcode === item.barcode);
+          if (productIndex !== -1 && newList[productIndex].useInventory) {
+            newList[productIndex].currentStock += returnQty;
+            newList[productIndex].stock = newList[productIndex].currentStock;
+          }
+          return newList;
+        });
+
+        // 2. Actualizar venta (opcionalmente marcar como devuelta)
+        const updatedSale = { ...sale, status: 'devuelta' as const };
+        setSalesHistory(prev => prev.map(s => s.id === sale.id ? updatedSale : s));
+        cloudSync.saveSale(updatedSale);
+
+        showMessage('Devolución procesada y stock actualizado', 'success');
+      }
+    });
+  };
+
   const handleCheckout = () => {
     if (cart.length === 0) return;
     setIsCheckoutOpen(true);
@@ -2353,6 +2456,7 @@ export default function App() {
       cashier: selectedCashier,
       customerId: selectedCustomerId,
       note: saleNote,
+      status: 'completada' as const,
       transferInfo: paymentMethod === 'transferencia' ? { ...transferForm } : null,
       cardInfo: paymentMethod === 'tarjeta' ? { ...cardForm } : null,
       usdInfo: paymentMethod === 'dolares' ? {
@@ -2505,8 +2609,10 @@ export default function App() {
         <head>
           <title>Recibo de Salida - ${ticketConfig.storeName}</title>
           <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=JetBrains+Mono:wght@400;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Space+Grotesk:wght@400;700&family=Outfit:wght@400;700&family=Anton&family=Satisfy&display=swap');
             body { 
-              font-family: ${isOffice ? "'Inter', sans-serif" : "'Courier New', Courier, monospace"}; 
+              font-family: ${ticketConfig.fontFamily || (isOffice ? "'Inter', sans-serif" : "'Courier New', Courier, monospace")}; 
+              font-weight: ${ticketConfig.isBold ? 'bold' : 'normal'};
               width: ${width}; 
               min-height: ${isOffice ? '297mm' : 'auto'};
               padding: ${padding}; 
@@ -2597,8 +2703,10 @@ export default function App() {
         <head>
           <title>Pre-Cuenta - ${account.name}</title>
           <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=JetBrains+Mono:wght@400;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Space+Grotesk:wght@400;700&family=Outfit:wght@400;700&family=Anton&family=Satisfy&display=swap');
             body { 
-              font-family: ${isOffice ? "'Inter', sans-serif" : "'Courier New', Courier, monospace"}; 
+              font-family: ${ticketConfig.fontFamily || (isOffice ? "'Inter', sans-serif" : "'Courier New', Courier, monospace")}; 
+              font-weight: ${ticketConfig.isBold ? 'bold' : 'normal'};
               width: ${width}; 
               margin: 0 auto; 
               padding: ${padding};
@@ -2710,14 +2818,16 @@ export default function App() {
         <head>
           <title>Factura - ${ticketConfig.storeName}</title>
           <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=JetBrains+Mono:wght@400;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Space+Grotesk:wght@400;700&family=Outfit:wght@400;700&family=Anton&family=Satisfy&display=swap');
             body { 
-              font-family: ${isOffice ? "'Inter', sans-serif" : "'Courier New', Courier, monospace"}; 
+              font-family: ${ticketConfig.fontFamily || (isOffice ? "'Inter', sans-serif" : "'Courier New', Courier, monospace")}; 
+              font-weight: ${ticketConfig.isBold ? 'bold' : 'normal'};
               width: ${width}; 
               min-height: ${isOffice ? '297mm' : 'auto'};
               padding: ${padding}; 
               margin: 0 auto; 
               color: #000; 
-              background: #white;
+              background: white;
             }
             .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 15px; margin-bottom: 15px; }
             .logo { max-width: ${isOffice ? '60mm' : '40mm'}; margin-bottom: 10px; }
@@ -2787,6 +2897,7 @@ export default function App() {
             <div class="row"><span>CAJERO:</span> <span>${sale.cashier}</span></div>
             ${sale.customerId ? `<div class="row"><span>CLIENTE:</span> <span>${customersList.find(c => c.id === sale.customerId)?.name || 'Cliente'}</span></div>` : ''}
             <div class="row"><span>METODO PAGO:</span> <span style="text-transform: uppercase;">${sale.paymentMethod}</span></div>
+            ${sale.status !== 'completada' ? `<div class="row" style="color: red; font-weight: bold; border: 2px solid red; padding: 4px; text-align: center; margin: 10px 0; text-transform: uppercase; display: block; font-size: 1.2em;">ESTADO: ${sale.status}</div>` : ''}
           </div>
 
           <table class="items">
@@ -3018,12 +3129,12 @@ export default function App() {
                <div className="bg-gray-50 rounded-3xl p-6 mb-10 border-2 border-gray-100 italic">
                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Tu cuenta venció el:</p>
                   <p className="text-2xl font-black text-red-700">{new Date(businessInfo.subscriptionEndDate).toLocaleDateString('es-DO', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-                  <div className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-[10px] font-bold mt-2 inline-block">ID DE CUENTA: {fbUser?.uid.slice(0, 8)}</div>
+                  <div className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-[10px] font-bold mt-2 inline-block">ID DE CUENTA: {fbUser?.uid ? fbUser.uid.slice(0, 8) : 'S/N'}</div>
                </div>
 
                <div className="flex flex-col sm:flex-row gap-4">
                  <button 
-                   onClick={() => window.open('https://wa.me/18298925070?text=Hola, mi cuenta de Y.G Facturación ha vencido. ID: ' + fbUser?.uid, '_blank')}
+                   onClick={() => window.open('https://wa.me/18298925070?text=Hola, mi cuenta de Y.G Facturación ha vencido. ID: ' + (fbUser?.uid || 'S/N'), '_blank')}
                    className="flex-1 bg-green-500 text-white py-5 rounded-2xl font-black text-xl shadow-[0_8px_0_0_rgba(21,128,61,1)] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2"
                  >
                    RENOVAR POR WHATSAPP
@@ -3057,7 +3168,7 @@ export default function App() {
             <motion.div 
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
-              className="w-full max-w-lg bg-white rounded-[4rem] shadow-2xl p-10 relative overflow-hidden border-8 border-yellow-400"
+              className="w-full max-w-lg bg-white rounded-[2.5rem] sm:rounded-[4rem] shadow-2xl p-6 sm:p-10 relative overflow-hidden border-[6px] sm:border-8 border-yellow-400"
             >
               {currentUser && (
                 <button 
@@ -3071,7 +3182,7 @@ export default function App() {
                 <div className="bg-yellow-400 p-6 rounded-[2.5rem] shadow-xl rotate-3 mb-6 border-4 border-red-700">
                   <ShoppingCart className="text-red-700" size={64} />
                 </div>
-                <h1 className="text-5xl font-black text-red-700 tracking-tighter italic">Y.G <span className="text-yellow-400 drop-shadow-md uppercase">Facturación</span></h1>
+                <h1 className="text-3xl sm:text-5xl font-black text-red-700 tracking-tighter italic">Y.G <span className="text-yellow-400 drop-shadow-md uppercase">Facturación</span></h1>
                 <p className="text-gray-400 font-bold uppercase tracking-widest text-sm mt-2">Sistema de Punto de Venta</p>
               </div>
 
@@ -3281,7 +3392,7 @@ export default function App() {
             </button>
           </div>
         )}
-        <div className="max-w-[1800px] mx-auto px-4 lg:px-6 py-4 flex justify-between items-center">
+        <div className="w-full mx-auto px-4 lg:px-6 py-2 flex justify-between items-center">
           <div className="flex items-center gap-4 lg:gap-8">
             <button
               onClick={() => setIsMobileMenuOpen(true)}
@@ -3328,7 +3439,7 @@ export default function App() {
               </div>
             </div>
             
-            <div className="hidden md:flex gap-2">
+            <div className="hidden md:flex gap-1 lg:gap-2">
               {[
                 { id: 'ventas', label: 'VENTAS', icon: ShoppingCart },
                 { id: 'cotizaciones', label: 'COTIZACIONES', icon: FileText },
@@ -3342,20 +3453,21 @@ export default function App() {
                 <button
                   key={tab.id}
                   onClick={() => setCurrentView(tab.id as any)}
-                  className={`flex items-center gap-2 px-6 py-2 rounded-2xl font-black transition-all ${
+                  className={`flex items-center gap-1 xl:gap-2 px-2 lg:px-4 xl:px-6 py-2 rounded-2xl font-black transition-all ${
                     currentView === tab.id 
                     ? 'bg-yellow-400 text-red-700 shadow-[0_4px_0_0_rgba(185,28,28,1)] -translate-y-1' 
                     : 'text-red-100 hover:bg-red-600'
                   }`}
                 >
-                  <tab.icon size={18} />
-                  {tab.label}
+                  <tab.icon size={16} className="shrink-0" />
+                  <span className="hidden xl:block text-xs">{tab.label}</span>
+                  <span className="xl:hidden text-[10px]">{tab.label.slice(0, 4)}</span>
                 </button>
               ))}
             </div>
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 lg:mr-16">
             <div className="hidden lg:block text-right">
               <p className="text-[10px] font-black text-red-300 uppercase tracking-widest">Cajero en Turno</p>
               <p className="text-sm font-black text-white hover:text-yellow-400 cursor-pointer transition-colors uppercase italic" onClick={handleSwitchUser}>{currentUser?.name || 'Administrador'}</p>
@@ -3527,7 +3639,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <main className="max-w-[1800px] mx-auto px-2 lg:px-6 py-6">
+      <main className="w-full mx-auto px-4 lg:px-6 py-2">
         <AnimatePresence mode="wait">
           {currentView === 'ventas' ? (
             <motion.div
@@ -3538,11 +3650,11 @@ export default function App() {
               className="w-full"
             >
               {/* 5. PUNTO DE VENTA (ESTILO SEMÁFORO) */}
-              <div className="w-full bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border-4 border-yellow-400 flex flex-col lg:flex-row min-h-[600px]">
+              <div className="w-full bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border-4 border-yellow-400 flex flex-col lg:flex-row">
                 
                 {/* Lista de Productos */}
-                <div className="flex-1 p-4 lg:p-6 bg-green-50/50 flex flex-col h-[700px]">
-                  <div className="flex flex-col md:flex-row gap-4 mb-8">
+                <div className="flex-1 p-4 lg:p-6 bg-green-50/50 flex flex-col">
+                  <div className="flex flex-col md:flex-row gap-4 mb-4">
                     <div className="flex-1 relative">
                       <div className="flex items-center bg-white p-4 rounded-2xl shadow-inner border-2 border-yellow-200 focus-within:border-yellow-400 transition-colors">
                         <Search className="text-yellow-500 mr-3" />
@@ -3688,7 +3800,7 @@ export default function App() {
                         <button
                           key={dept}
                           onClick={() => setSelectedDeptFilter(dept)}
-                          className={`px-6 py-2 rounded-full font-black text-[10px] tracking-widest whitespace-nowrap transition-all uppercase ${selectedDeptFilter === dept ? 'bg-red-600 text-white shadow-lg' : 'bg-white text-gray-400 hover:bg-gray-100 border-2 border-transparent'}`}
+                          className={`px-2 py-0.5 rounded-md font-black text-[8px] tracking-tight whitespace-nowrap transition-all uppercase ${selectedDeptFilter === dept ? 'bg-red-600 text-white shadow-sm' : 'bg-white text-gray-400 hover:bg-gray-100 border border-gray-100'}`}
                         >
                           {dept}
                         </button>
@@ -3696,8 +3808,8 @@ export default function App() {
                     </div>
                   )}
                   
-                  <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-4">
+                  <div className="flex-1 overflow-y-auto pr-1 sm:pr-2 custom-scrollbar">
+                    <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 gap-1 pb-4">
                       {(ventasDisplayMode === 'search' ? filteredProducts : quickProducts).map(product => (
                         <motion.div 
                           layout
@@ -3706,19 +3818,18 @@ export default function App() {
                             addToCart(product);
                             setSearchTerm('');
                           }}
-                          className={`bg-white rounded-[2rem] shadow-sm border-2 transition-all group overflow-hidden cursor-pointer flex flex-col ${
+                          className={`bg-white rounded-lg shadow-sm border transition-all group overflow-hidden cursor-pointer flex flex-col ${
                             ventasDisplayMode === 'search' && selectedIndex === filteredProducts.indexOf(product)
-                            ? 'border-yellow-400 shadow-xl ring-4 ring-yellow-100 scale-[1.02]'
-                            : 'border-transparent hover:border-yellow-400 hover:shadow-xl'
+                            ? 'border-yellow-400 shadow-lg ring-2 ring-yellow-100 scale-[1.01]'
+                            : 'border-gray-100 hover:border-yellow-400 hover:shadow-md'
                           }`}
                         >
-                          <div className="aspect-square bg-gray-50 relative overflow-hidden">
+                          <div className="aspect-[4/3] bg-gray-50 relative overflow-hidden">
                             {product.image ? (
                               <img src={product.image} alt={product.name} className="w-full h-full object-cover transition-transform group-hover:scale-110" referrerPolicy="no-referrer" />
                             ) : (
                               <div className="w-full h-full flex flex-col items-center justify-center text-gray-200">
-                                <ImageIcon size={48} strokeWidth={1} />
-                                <span className="text-[10px] font-black uppercase mt-2">Sin Foto</span>
+                                <ImageIcon size={32} strokeWidth={1} />
                               </div>
                             )}
                             <div className="absolute top-2 right-2 flex flex-col gap-1">
@@ -3733,13 +3844,13 @@ export default function App() {
                             </div>
                             <div className="absolute inset-0 bg-yellow-400/0 group-hover:bg-yellow-400/10 transition-colors" />
                           </div>
-                          <div className="p-4 flex flex-col flex-1 justify-between">
-                            <h4 className="font-black text-gray-800 text-xs truncate uppercase tracking-tight mb-2">{product.name}</h4>
-                            <div className="flex justify-between items-end">
-                              <span className="text-xl font-black text-green-600">${product.price.toFixed(2)}</span>
+                          <div className="p-1 sm:p-2 flex flex-col flex-1 justify-between bg-white">
+                            <h4 className="font-black text-gray-800 text-[9px] sm:text-[10px] leading-tight truncate uppercase tracking-tight mb-0.5">{product.name}</h4>
+                            <div className="flex justify-between items-end gap-1">
+                              <span className="text-base sm:text-lg font-black text-green-600">${product.price.toFixed(2)}</span>
                               <div className="text-right">
-                                <p className={`text-[10px] font-black uppercase leading-none ${product.stock > product.minStock ? 'text-gray-400' : 'text-red-500'}`}>
-                                  Stock: {product.stock}
+                                <p className={`text-[8px] sm:text-[9px] font-black uppercase leading-none ${product.stock > product.minStock ? 'text-gray-400' : 'text-red-500'}`}>
+                                  {product.stock} {product.unit}
                                 </p>
                               </div>
                             </div>
@@ -3770,8 +3881,8 @@ export default function App() {
                 </div>
 
                 {/* Resumen de Pago */}
-                <div className="w-full lg:w-[400px] p-6 lg:p-6 bg-red-600 text-white flex flex-col relative">
-                  <div className="flex-1">
+                <div className="w-full lg:w-[350px] xl:w-[400px] 2xl:w-[450px] p-4 lg:p-6 bg-red-600 text-white flex flex-col relative shrink-0">
+                  <div className="flex-1 overflow-y-auto custom-scrollbar">
                     <h3 className="text-3xl font-black mb-6 flex items-center gap-3">
                       <ShoppingCart size={32} /> FACTURA
                     </h3>
@@ -4076,6 +4187,14 @@ export default function App() {
                       >
                         <CreditCard size={28} /> COBRAR AHORA
                       </motion.button>
+
+                      <motion.button 
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setCurrentView('ventas_historial')}
+                        className="w-full mt-4 bg-white border-4 border-blue-600 text-blue-600 py-6 rounded-3xl font-black text-xl uppercase italic tracking-tighter shadow-[0_10px_0_0_rgba(37,99,235,1)] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-3"
+                      >
+                        <History size={28} /> VENTAS DEL DÍA Y DEVOLUCIONES
+                      </motion.button>
                     </div>
                   </div>
 
@@ -4322,6 +4441,300 @@ export default function App() {
                   </AnimatePresence>
                 </div>
               </div>
+            </motion.div>
+          ) : currentView === 'ventas_historial' ? (
+            <motion.div
+              key="ventas-historial-view"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full bg-white rounded-[2.5rem] shadow-2xl border-4 border-yellow-400 overflow-hidden"
+            >
+              {/* Header */}
+              <div className="bg-gradient-to-r from-blue-600 to-blue-800 p-8 flex flex-col md:flex-row items-center justify-between gap-6 text-white">
+                <div className="flex items-center gap-4">
+                  <div className="bg-white/20 p-4 rounded-3xl backdrop-blur-md">
+                    <History size={40} />
+                  </div>
+                  <div>
+                    <h2 className="text-4xl font-black uppercase italic tracking-tighter leading-tight">Ventas del Día y Devoluciones</h2>
+                    <p className="text-blue-200 font-bold uppercase text-[10px] tracking-[0.2em] mt-1 pl-1">Historial de Facturación y Control de Stock</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+                   <div className="relative flex-1 sm:w-64">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-300" size={20} />
+                    <input 
+                      type="text"
+                      value={salesSearchTerm}
+                      onChange={(e) => setSalesSearchTerm(e.target.value)}
+                      placeholder="Ticket, Cliente o Cajero..."
+                      className="w-full bg-blue-900/30 border-2 border-blue-400/30 rounded-2xl py-4 pl-12 pr-4 font-bold text-white placeholder:text-blue-300 outline-none focus:border-blue-400 transition-all shadow-inner"
+                    />
+                  </div>
+                  <div className="relative sm:w-48">
+                    <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-300" size={20} />
+                    <input 
+                      type="date"
+                      value={salesDateFilter}
+                      onChange={(e) => setSalesDateFilter(e.target.value)}
+                      className="w-full bg-blue-900/30 border-2 border-blue-400/30 rounded-2xl py-4 pl-12 pr-4 font-bold text-white outline-none focus:border-blue-400 transition-all shadow-inner text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Stats Summary Panel */}
+              <div className="bg-blue-50/50 p-2 sm:p-3 border-b-2 border-blue-100 grid grid-cols-2 md:grid-cols-4 gap-2">
+                <div className="bg-white p-3 sm:p-4 rounded-[2rem] shadow-sm border-2 border-blue-100 overflow-hidden">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 leading-none outline-none">TOTAL VENDIDO ({salesDateFilter || 'Todo'})</p>
+                  <p className="text-2xl sm:text-3xl font-black text-blue-600 tracking-tighter italic truncate">
+                    ${filteredSalesHistory.reduce((sum, s) => s.status !== 'cancelada' ? sum + s.total : sum, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div className="bg-white p-3 sm:p-4 rounded-[2rem] shadow-sm border-2 border-red-100">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 leading-none">FACTURAS EMITIDAS</p>
+                  <p className="text-2xl sm:text-3xl font-black text-gray-800 tracking-tighter italic">{filteredSalesHistory.length}</p>
+                </div>
+                <div className="bg-white p-3 sm:p-4 rounded-[2rem] shadow-sm border-2 border-green-100">
+                  <p className="text-[10px] font-black text-green-600 uppercase tracking-widest mb-1 leading-none">COMPLETAS</p>
+                  <p className="text-2xl sm:text-3xl font-black text-green-600 tracking-tighter italic">{filteredSalesHistory.filter(s => s.status === 'completada').length}</p>
+                </div>
+                <div className="bg-white p-3 sm:p-4 rounded-[2rem] shadow-sm border-2 border-red-200">
+                  <p className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-1 leading-none">CANCELADAS</p>
+                  <p className="text-2xl sm:text-3xl font-black text-red-600 tracking-tighter italic">{filteredSalesHistory.filter(s => s.status === 'cancelada').length}</p>
+                </div>
+              </div>
+
+              {/* Sales List Table */}
+              <div className="p-2 sm:p-4">
+                <div className="bg-white rounded-3xl sm:rounded-[2.5rem] border-2 border-gray-100 shadow-xl overflow-hidden overflow-x-auto">
+                  <table className="w-full text-left min-w-[800px] lg:min-w-[1000px]">
+                    <thead>
+                      <tr className="bg-gray-50 border-b-2 border-gray-100 text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                        <th className="px-6 py-4">Status</th>
+                        <th className="px-6 py-4">Ticket</th>
+                        <th className="px-6 py-4">Fecha/Hora</th>
+                        <th className="px-6 py-4">Cliente</th>
+                        <th className="px-6 py-4">Método</th>
+                        <th className="px-6 py-4">Cajero</th>
+                        <th className="px-6 py-4 text-right">Monto Total</th>
+                        <th className="px-6 py-4 text-center">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50 text-sm">
+                      {filteredSalesHistory.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="px-6 py-20 text-center opacity-20">
+                            <History size={64} className="mx-auto mb-4" />
+                            <p className="text-2xl font-black uppercase italic tracking-tighter">No hay ventas registradas</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredSalesHistory.map(sale => {
+                          const customer = customersList.find(c => c.id === sale.customerId);
+                          return (
+                            <tr key={sale.id} className={`hover:bg-yellow-50/50 transition-colors ${sale.status === 'cancelada' ? 'bg-red-50/50' : ''}`}>
+                              <td className="px-6 py-4">
+                                <div className={`flex items-center justify-center gap-2 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter w-fit ${
+                                  sale.status === 'cancelada' ? 'bg-red-100 text-red-600' : 
+                                  sale.status === 'devuelta' ? 'bg-blue-100 text-blue-600' : 
+                                  'bg-green-100 text-green-600'
+                                }`}>
+                                  {sale.status === 'cancelada' ? <Ban size={10} /> : 
+                                   sale.status === 'devuelta' ? <RotateCcw size={10} /> : 
+                                   <CheckCircle size={10} />}
+                                  {sale.status}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 font-black text-red-700 italic">#{sale.id.toString().slice(-6)}</td>
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col">
+                                  <span className="font-black text-gray-700 leading-none mb-1">{new Date(sale.date).toLocaleDateString([], { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                                  <span className="text-[10px] font-bold text-gray-400">{new Date(sale.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex flex-col max-w-[180px]">
+                                  <span className="font-black text-gray-700 leading-none mb-1 truncate uppercase italic">
+                                    {customer?.name || 'Venta de Mostrador'}
+                                  </span>
+                                  <span className="text-[10px] font-bold text-gray-400">{customer?.rnc || 'ID: ' + sale.id.toString().slice(0,4)}</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-0.5 rounded-lg uppercase italic tracking-tighter">
+                                  {sale.paymentMethod}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 font-black text-gray-500 text-[10px] uppercase italic">{sale.cashier}</td>
+                              <td className="px-6 py-4 text-right">
+                                <span className={`text-lg font-black tracking-tighter italic ${sale.status === 'cancelada' ? 'text-gray-300 line-through' : 'text-red-700'}`}>
+                                  ${sale.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center justify-center gap-2">
+                                  <button 
+                                    onClick={() => setSelectedSaleDetail(sale)}
+                                    className="p-2 bg-white border-2 border-gray-100 rounded-xl hover:bg-yellow-50 text-yellow-600 shadow-sm transition-all"
+                                    title="Ver Detalles"
+                                  >
+                                    <Eye size={16} />
+                                  </button>
+                                  <button 
+                                    onClick={() => handlePrintReceipt(sale)}
+                                    className="p-2 bg-white border-2 border-gray-100 rounded-xl hover:bg-blue-50 text-blue-600 shadow-sm transition-all"
+                                    title="Re-imprimir Ticket"
+                                  >
+                                    <Printer size={16} />
+                                  </button>
+                                  {sale.status !== 'cancelada' && (
+                                    <button 
+                                      onClick={() => handleCancelSale(sale)}
+                                      className="p-2 bg-white border-2 border-gray-100 rounded-xl hover:bg-red-50 text-red-600 shadow-sm transition-all"
+                                      title="Cancelar Factura"
+                                    >
+                                      <Ban size={16} />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Detalle de Venta Overlay */}
+              <AnimatePresence>
+                {selectedSaleDetail && (
+                  <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 overflow-hidden">
+                    <motion.div 
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      onClick={() => setSelectedSaleDetail(null)}
+                      className="absolute inset-0 bg-blue-950/80 backdrop-blur-md"
+                    />
+                    <motion.div
+                      initial={{ scale: 0.9, opacity: 0, y: 30 }}
+                      animate={{ scale: 1, opacity: 1, y: 0 }}
+                      exit={{ scale: 0.9, opacity: 0, y: 30 }}
+                      className="bg-white rounded-[3rem] sm:rounded-[4rem] border-[8px] border-yellow-400 p-6 sm:p-10 w-full max-w-2xl relative z-10 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+                    >
+                      <button 
+                        onClick={() => setSelectedSaleDetail(null)}
+                        className="absolute top-6 right-6 sm:top-10 sm:right-10 p-3 bg-blue-50 text-blue-500 rounded-2xl hover:bg-blue-100 transition-colors z-20"
+                      >
+                        <X size={24} />
+                      </button>
+
+                      <div className="flex items-center gap-4 mb-8">
+                        <div className="w-16 h-16 bg-blue-600 rounded-[2rem] flex items-center justify-center text-white shadow-xl rotate-3">
+                          <Ticket size={32} />
+                        </div>
+                        <div>
+                          <h3 className="text-2xl sm:text-4xl font-black text-gray-800 tracking-tighter uppercase italic leading-none">Ticket #{selectedSaleDetail.id.toString().slice(-6)}</h3>
+                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mt-1 pl-1">Detalle Maestro de Transacción</p>
+                        </div>
+                      </div>
+
+                      <div className="flex-1 overflow-y-auto pr-4 custom-scrollbar mb-8 space-y-6">
+                        <div className="bg-gray-50 rounded-[2.5rem] p-6 sm:p-8 border-4 border-gray-100">
+                           <table className="w-full">
+                             <thead>
+                               <tr className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] border-b-2 border-gray-200">
+                                 <th className="pb-4 text-left">Producto / Servicio</th>
+                                 <th className="pb-4 text-center">Cant.</th>
+                                 <th className="pb-4 text-right">Precio</th>
+                                 <th className="pb-4 text-right">Monto</th>
+                                 <th className="pb-4 text-center">Dev.</th>
+                               </tr>
+                             </thead>
+                             <tbody className="divide-y divide-gray-100">
+                               {selectedSaleDetail.items.map((item, idx) => (
+                                 <tr key={idx} className="group hover:bg-white/50 transition-colors">
+                                   <td className="py-4">
+                                      <p className="font-black text-gray-800 uppercase text-xs tracking-tighter leading-snug">{item.name}</p>
+                                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest italic">{item.barcode || item.id}</p>
+                                   </td>
+                                   <td className="py-4 text-center font-black text-gray-600 italic text-sm">{item.quantity}</td>
+                                   <td className="py-4 text-right font-bold text-gray-400 text-xs">${item.price.toFixed(2)}</td>
+                                   <td className="py-4 text-right font-black text-blue-700 tracking-tighter italic text-base">${(item.price * item.quantity).toFixed(2)}</td>
+                                   <td className="py-4 text-center">
+                                      {selectedSaleDetail.status !== 'cancelada' && (
+                                        <button 
+                                          onClick={() => handleReturnItem(selectedSaleDetail, idx, 1)}
+                                          className="p-2 bg-white border-2 border-gray-100 rounded-xl text-blue-500 hover:border-blue-500 hover:bg-blue-50 transition-all shadow-sm"
+                                          title="Devolver 1 unidad"
+                                        >
+                                          <RotateCcw size={14} />
+                                        </button>
+                                      )}
+                                   </td>
+                                 </tr>
+                               ))}
+                             </tbody>
+                           </table>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                           <div className="bg-blue-50 rounded-[2rem] p-6 border-4 border-blue-100 relative overflow-hidden group">
+                              <DollarSign className="absolute -right-4 -bottom-4 text-blue-100 group-hover:text-blue-200 transition-colors" size={100} />
+                              <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1 relative z-10 leading-none">Método de Cobro</p>
+                              <p className="text-2xl font-black text-blue-900 uppercase italic tracking-tighter relative z-10">{selectedSaleDetail.paymentMethod}</p>
+                              <div className="flex items-center gap-2 mt-2 relative z-10">
+                                 <div className="w-6 h-6 bg-blue-600 rounded-lg flex items-center justify-center text-white text-[10px] font-black uppercase italic">
+                                    {selectedSaleDetail.cashier[0]}
+                                 </div>
+                                 <p className="text-[10px] font-black text-blue-600 uppercase italic tracking-tighter">Por: {selectedSaleDetail.cashier}</p>
+                              </div>
+                           </div>
+                           <div className="bg-blue-600 rounded-[2rem] p-6 text-white text-right shadow-xl shadow-blue-200 border-4 border-blue-700 relative overflow-hidden group">
+                              <ShoppingCart className="absolute -left-4 -bottom-4 text-blue-500 group-hover:text-blue-400 transition-colors" size={100} />
+                              <p className="text-[10px] font-black text-blue-100 uppercase tracking-widest mb-1 relative z-10 leading-none">TOTAL NETO COBRADO</p>
+                              <p className={`text-4xl font-black tracking-tighter italic relative z-10 ${selectedSaleDetail.status === 'cancelada' ? 'line-through decoration-white/50' : ''}`}>
+                                ${selectedSaleDetail.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              </p>
+                              <div className="mt-2 inline-flex items-center gap-2 bg-white/20 px-3 py-1 rounded-full relative z-10 backdrop-blur-md">
+                                 {selectedSaleDetail.status === 'cancelada' ? <Ban size={10} /> : <CheckCircle size={10} />}
+                                 <span className="text-[9px] font-black uppercase italic tracking-widest">{selectedSaleDetail.status}</span>
+                              </div>
+                           </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row gap-4 mt-auto">
+                         <button 
+                           onClick={() => {
+                             handlePrintReceipt(selectedSaleDetail);
+                             setSelectedSaleDetail(null);
+                           }}
+                           className="flex-1 bg-gray-800 text-white py-6 rounded-3xl font-black text-xl uppercase italic tracking-tighter shadow-xl active:translate-y-1 transition-all flex items-center justify-center gap-3 border-4 border-transparent hover:border-gray-500"
+                         >
+                           <Printer size={28} /> RE-IMPRIMIR TICKET
+                         </button>
+                         {selectedSaleDetail.status !== 'cancelada' && (
+                           <button 
+                             onClick={() => {
+                               handleCancelSale(selectedSaleDetail);
+                               setSelectedSaleDetail(null);
+                             }}
+                             className="flex-1 bg-red-700 text-white py-6 rounded-3xl font-black text-xl uppercase italic tracking-tighter shadow-xl active:translate-y-1 transition-all flex items-center justify-center gap-3 border-4 border-red-800 hover:bg-red-600"
+                           >
+                             <Ban size={28} /> CANCELAR FACTURA
+                           </button>
+                         )}
+                      </div>
+                    </motion.div>
+                  </div>
+                )}
+              </AnimatePresence>
             </motion.div>
           ) : currentView === 'cotizaciones' ? (
             <motion.div
@@ -4611,7 +5024,7 @@ export default function App() {
                       ¡ATENCIÓN! {lowStockProducts.length} PRODUCTOS CON STOCK BAJO
                     </h3>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                     {lowStockProducts.map((product) => (
                       <motion.div 
                         initial={{ opacity: 0, scale: 0.9 }}
@@ -4669,7 +5082,7 @@ export default function App() {
                   { id: 'eliminar', label: 'Eliminar', icon: Trash2, p: 'canManageProducts' },
                   { id: 'deptos', label: 'Departamentos', icon: LayoutGrid, p: 'canManageProducts' },
                   { id: 'ventas', label: 'Ventas por Periodo', icon: BarChart3, p: 'canViewSales' },
-                  { id: 'promos', label: 'Promociones', icon: 'canManageProducts' },
+                  { id: 'promos', label: 'Promociones', icon: Tag, p: 'canManageProducts' },
                   { id: 'importar', label: 'Importar ...', icon: FileUp, p: 'canManageProducts' },
                 ].filter(btn => !btn.p || currentUser?.role === 'admin' || (currentUser?.permissions as any)?.[btn.p]).map((btn) => (
                   <button 
@@ -4771,7 +5184,7 @@ export default function App() {
               </div>
 
               {/* Formulario o Buscador de Modificar */}
-              <div className="p-8 relative min-h-[500px]">
+              <div className="p-8 relative min-h-[400px] sm:min-h-[500px]">
                 <AnimatePresence mode="wait">
                   {(isSearchingToModify || isSearchingToDelete) ? (
                     <motion.div
@@ -6152,7 +6565,7 @@ export default function App() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="w-full bg-white rounded-[2.5rem] shadow-2xl border-4 border-yellow-400 p-8 min-h-[600px] flex flex-col overflow-hidden"
+              className="w-full bg-white rounded-[2.5rem] shadow-2xl border-4 border-yellow-400 p-8 min-h-[500px] sm:min-h-[600px] flex flex-col overflow-hidden"
             >
               {/* Header */}
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 sm:gap-6 mb-6 sm:mb-8 bg-gray-50 p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 border-gray-100">
@@ -6214,8 +6627,8 @@ export default function App() {
                 <div className="xl:col-span-2 space-y-8">
                   
                   {/* Cards de Resumen */}
-                  <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
-                    <div className="bg-white p-4 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-gray-100 shadow-sm group hover:border-yellow-400 transition-all">
+                  <div className="grid grid-cols-2 xs:grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+                    <div className="bg-white p-2 sm:p-3 rounded-2xl sm:rounded-3xl border-2 border-gray-100 shadow-sm group hover:border-yellow-400 transition-all">
                       <p className="text-[8px] sm:text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Fondo Inicial</p>
                       <div className="relative group">
                         <span className="absolute left-0 top-1/2 -translate-y-1/2 font-black text-gray-300 group-focus-within:text-yellow-600 transition-colors">$</span>
@@ -6229,7 +6642,7 @@ export default function App() {
                       </div>
                       <p className="text-[7px] sm:text-[8px] font-bold text-gray-300 uppercase mt-1">Efectivo en base</p>
                     </div>
-                    <div className="bg-green-50 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-green-200 shadow-sm relative overflow-hidden">
+                    <div className="bg-green-50 p-2 sm:p-3 rounded-2xl sm:rounded-3xl border-2 border-green-200 shadow-sm relative overflow-hidden">
                       <p className="text-[8px] sm:text-[10px] font-black text-green-600 uppercase tracking-widest mb-1 truncate" title="Efectivo Neto">Efectivo Neto</p>
                       <p className="text-lg md:text-2xl font-black text-green-700 truncate" title={`$${dailySummary.cash.toFixed(2)}`}>
                         ${dailySummary.cash.toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -6238,14 +6651,14 @@ export default function App() {
                         <ArrowUpCircle size={10} /> Ingresos - Gastos
                       </p>
                     </div>
-                    <div className="bg-blue-50 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-blue-200 shadow-sm">
+                    <div className="bg-blue-50 p-2 sm:p-3 rounded-2xl sm:rounded-3xl border-2 border-blue-200 shadow-sm">
                       <p className="text-[8px] sm:text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1 truncate" title="Bancos / Tarjetas">Bancos / Tarjetas</p>
                       <p className="text-lg md:text-2xl font-black text-blue-700 truncate" title={`$${(dailySummary.card + dailySummary.transfer).toFixed(2)}`}>
                         ${(dailySummary.card + dailySummary.transfer).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </p>
                       <p className="text-[8px] sm:text-[9px] font-bold text-blue-400 uppercase mt-1 truncate">No físico en caja</p>
                     </div>
-                    <div className="bg-emerald-50 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-emerald-200 shadow-sm relative overflow-hidden">
+                    <div className="bg-emerald-50 p-2 sm:p-3 rounded-2xl sm:rounded-3xl border-2 border-emerald-200 shadow-sm relative overflow-hidden">
                       <p className="text-[8px] sm:text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1 truncate" title="Ventas USD">Ventas USD</p>
                       <p className="text-lg md:text-2xl font-black text-emerald-700 truncate" title={`$${dailySummary.dolares.toFixed(2)}`}>
                         ${dailySummary.dolares.toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -6253,14 +6666,14 @@ export default function App() {
                       <span className="text-[8px] sm:text-[9px] font-bold text-emerald-500 uppercase truncate">Equiv. en Pesos</span>
                       <DollarSign className="absolute -right-2 -bottom-2 text-emerald-100 w-12 h-12 sm:w-16 sm:h-16 rotate-12 opacity-50" />
                     </div>
-                    <div className="bg-red-50 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border-2 border-red-200 shadow-sm">
+                    <div className="bg-red-50 p-2 sm:p-3 rounded-2xl sm:rounded-3xl border-2 border-red-200 shadow-sm">
                       <p className="text-[8px] sm:text-[10px] font-black text-red-600 uppercase tracking-widest mb-1 truncate" title="Total Gastos">Total Gastos</p>
                       <p className="text-lg md:text-2xl font-black text-red-700 truncate" title={`-$${dailySummary.expenses.toFixed(2)}`}>
                         -${dailySummary.expenses.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </p>
                       <p className="text-[8px] sm:text-[9px] font-bold text-red-400 uppercase mt-1 truncate">Salidas registradas</p>
                     </div>
-                    <div className="bg-yellow-400 p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-xl shadow-yellow-100 relative overflow-hidden border-2 sm:border-4 border-white transform hover:scale-105 transition-transform">
+                    <div className="bg-yellow-400 p-2 sm:p-3 rounded-2xl sm:rounded-3xl shadow-xl shadow-yellow-100 relative overflow-hidden border-2 sm:border-4 border-white transform hover:scale-105 transition-transform">
                       <p className="text-[8px] sm:text-[10px] font-black text-yellow-900 uppercase tracking-widest mb-1 relative z-10 truncate" title="Balance de Caja">Balance de Caja</p>
                       <p className="text-xl md:text-2xl font-black text-red-700 relative z-10 leading-none truncate" title={`$${(initialCash + dailySummary.cash + dailySummary.dolares).toFixed(2)}`}>
                         ${(initialCash + dailySummary.cash + dailySummary.dolares).toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -6279,7 +6692,7 @@ export default function App() {
                       <h3 className="font-black text-gray-700 uppercase tracking-widest text-xs">Reporte de Ganancias (Beneficio Neto)</h3>
                     </div>
                     
-                    <div className="grid grid-cols-2 xs:grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+                    <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-3 lg:grid-cols-5 gap-2">
                       {[
                         { label: 'Hoy', val: profitStats.diario, color: 'text-green-600', bg: 'bg-green-50' },
                         { label: '7 Días', val: profitStats.semanal, color: 'text-blue-600', bg: 'bg-blue-50' },
@@ -6469,7 +6882,7 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full bg-white rounded-[2.5rem] shadow-2xl border-4 border-yellow-400 overflow-hidden min-h-[700px] flex flex-col"
+              className="w-full bg-white rounded-[2.5rem] shadow-2xl border-4 border-yellow-400 overflow-hidden min-h-[500px] sm:min-h-[700px] flex flex-col"
             >
               <div className="bg-gradient-to-r from-yellow-500 to-orange-500 p-8 text-white flex justify-between items-center">
                 <div>
@@ -6908,7 +7321,7 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full bg-white rounded-[2.5rem] shadow-2xl border-4 border-red-500 overflow-hidden min-h-[700px] flex flex-col"
+              className="w-full bg-white rounded-[2.5rem] shadow-2xl border-4 border-red-500 overflow-hidden min-h-[500px] sm:min-h-[700px] flex flex-col"
             >
               <div className="bg-gradient-to-r from-red-600 to-red-800 p-8 text-white flex justify-between items-center">
                 <div>
@@ -7066,7 +7479,7 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full bg-white rounded-[2.5rem] shadow-2xl border-4 border-yellow-400 overflow-hidden flex flex-col min-h-[700px]"
+              className="w-full bg-white rounded-[2.5rem] shadow-2xl border-4 border-yellow-400 overflow-hidden flex flex-col min-h-[500px] sm:min-h-[700px]"
             >
               {/* Header Técnico */}
               <div className="bg-red-700 p-6 flex flex-col md:flex-row justify-between items-center gap-4 text-white">
@@ -7216,7 +7629,7 @@ export default function App() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="w-full bg-white rounded-[2.5rem] shadow-2xl border-4 border-yellow-400 p-8 min-h-[600px] flex flex-col"
+              className="w-full bg-white rounded-[2.5rem] shadow-2xl border-4 border-yellow-400 p-8 min-h-[500px] sm:min-h-[600px] flex flex-col"
             >
               <div className="flex justify-between items-center mb-10">
                 <div>
@@ -7621,7 +8034,42 @@ export default function App() {
                         </div>
                       </div>
 
+                      <div className="pt-2 border-t border-gray-100">
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-3">Tipografía del Ticket</label>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {AVAILABLE_FONTS.map((font) => (
+                            <button
+                              key={font.value}
+                              onClick={() => setTicketConfig({...ticketConfig, fontFamily: font.value})}
+                              className={`p-3 rounded-2xl border-2 transition-all flex items-center gap-3 ${
+                                ticketConfig.fontFamily === font.value 
+                                ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm' 
+                                : 'border-gray-100 bg-gray-50 text-gray-500 hover:border-blue-200'
+                              }`}
+                              style={{ fontFamily: font.value }}
+                            >
+                              <div className={`p-2 rounded-lg ${ticketConfig.fontFamily === font.value ? 'bg-blue-200 text-blue-700' : 'bg-gray-200 text-gray-400'}`}>
+                                <Type size={14} />
+                              </div>
+                              <span className="text-[10px] font-black uppercase tracking-tighter truncate">{font.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
                       <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
+                        <div className="flex items-center gap-2">
+                          <input 
+                            type="checkbox"
+                            id="is-bold"
+                            checked={ticketConfig.isBold}
+                            onChange={(e) => setTicketConfig({...ticketConfig, isBold: e.target.checked})}
+                            className="w-4 h-4 rounded-md border-2 border-blue-400 text-blue-500"
+                          />
+                          <label htmlFor="is-bold" className="text-[10px] font-black uppercase text-gray-600 cursor-pointer flex items-center gap-1">
+                            <Bold size={12} className="text-blue-500" /> Texto en Negritas
+                          </label>
+                        </div>
                         <div className="flex items-center gap-2">
                           <input 
                             type="checkbox"
