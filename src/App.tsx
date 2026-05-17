@@ -912,7 +912,8 @@ export default function App() {
         printSize: '80mm',
         openDrawerOnPrint: true,
         fontFamily: '"Inter", sans-serif',
-        isBold: false
+        isBold: false,
+        fontSize: 'base'
       };
       return saved ? { ...defaultTicket, ...JSON.parse(saved) } : defaultTicket;
     } catch {
@@ -926,7 +927,10 @@ export default function App() {
         showLogo: true,
         logo: 'https://picsum.photos/seed/shop/200/200',
         printSize: '80mm',
-        openDrawerOnPrint: true
+        openDrawerOnPrint: true,
+        fontFamily: '"Inter", sans-serif',
+        isBold: false,
+        fontSize: 'base'
       };
     }
   });
@@ -2171,6 +2175,17 @@ export default function App() {
     const width = isOffice ? '210mm' : size;
     const padding = isOffice ? '20mm' : '5mm';
 
+    // Base font sizes for different paper sizes
+    let fontMultiplier = 1;
+    if (ticketConfig.fontSize === 'sm') fontMultiplier = 0.8;
+    if (ticketConfig.fontSize === 'lg') fontMultiplier = 1.25;
+
+    const baseFontSize = size === '58mm' ? 10 : (isOffice ? 14 : 12);
+    const fontSize = `${Math.round(baseFontSize * fontMultiplier)}px`;
+    const storeNameSize = `${Math.round((isOffice ? 28 : 18) * fontMultiplier)}px`;
+    const subFontSize = `${Math.round((isOffice ? 12 : 11) * fontMultiplier)}px`;
+    const totalsSize = `${Math.round((isOffice ? 16 : 13) * fontMultiplier)}px`;
+
     const html = `
       <html>
         <head>
@@ -2188,7 +2203,7 @@ export default function App() {
             }
             .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
             .logo { max-width: ${isOffice ? '60mm' : '40mm'}; margin-bottom: 10px; }
-            .store-name { font-size: ${isOffice ? '28px' : '20px'}; font-weight: 900; text-transform: uppercase; }
+            .store-name { font-size: ${storeNameSize}; font-weight: 900; text-transform: uppercase; }
             .doc-type { 
               background: #000; 
               color: #fff; 
@@ -2197,16 +2212,16 @@ export default function App() {
               font-weight: 900; 
               margin-top: 10px; 
               border-radius: 5px;
-              font-size: ${isOffice ? '18px' : '14px'};
+              font-size: ${totalsSize};
             }
-            .info-grid { display: grid; grid-template-cols: 1fr 1fr; gap: 20px; margin: 20px 0; font-size: ${isOffice ? '14px' : '12px'}; }
+            .info-grid { display: grid; grid-template-cols: 1fr 1fr; gap: 20px; margin: 20px 0; font-size: ${fontSize}; }
             .items-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-            .items-table th { text-align: left; border-bottom: 2px solid #000; padding: 10px 5px; text-transform: uppercase; font-size: ${isOffice ? '14px' : '12px'}; }
-            .items-table td { padding: 8px 5px; border-bottom: 1px solid #eee; font-size: ${isOffice ? '14px' : '12px'}; }
+            .items-table th { text-align: left; border-bottom: 2px solid #000; padding: 10px 5px; text-transform: uppercase; font-size: ${fontSize}; }
+            .items-table td { padding: 8px 5px; border-bottom: 1px solid #eee; font-size: ${fontSize}; }
             .total-section { margin-top: 20px; text-align: right; }
-            .total-row { display: flex; justify-content: flex-end; gap: 20px; margin: 5px 0; }
-            .total-row.grand { font-size: ${isOffice ? '24px' : '18px'}; font-weight: 900; border-top: 2px solid #000; padding-top: 5px; margin-top: 10px; }
-            .disclaimer { margin-top: 40px; font-size: ${isOffice ? '12px' : '10px'}; font-style: italic; text-align: center; border: 1px dashed #ccc; padding: 10px; }
+            .total-row { display: flex; justify-content: flex-end; gap: 20px; margin: 5px 0; font-size: ${fontSize}; }
+            .total-row.grand { font-size: ${totalsSize}; font-weight: 900; border-top: 2px solid #000; padding-top: 5px; margin-top: 10px; }
+            .disclaimer { margin-top: 40px; font-size: ${subFontSize}; font-style: italic; text-align: center; border: 1px dashed #ccc; padding: 10px; }
             @media print {
               @page { margin: ${isOffice ? '10mm' : '0'}; }
               body { margin: 0 auto; -webkit-print-color-adjust: exact; }
@@ -2811,7 +2826,17 @@ export default function App() {
     const isOffice = size === 'office';
     const width = isOffice ? '210mm' : size;
     const padding = isOffice ? '20mm' : '5mm';
-    const fontSize = size === '58mm' ? '10px' : (isOffice ? '14px' : '12px');
+    
+    // Base font sizes for different paper sizes
+    let fontMultiplier = 1;
+    if (ticketConfig.fontSize === 'sm') fontMultiplier = 0.8;
+    if (ticketConfig.fontSize === 'lg') fontMultiplier = 1.25;
+
+    const baseFontSize = size === '58mm' ? 10 : (isOffice ? 14 : 12);
+    const fontSize = `${Math.round(baseFontSize * fontMultiplier)}px`;
+    const storeNameSize = `${Math.round((isOffice ? 28 : 18) * fontMultiplier)}px`;
+    const subFontSize = `${Math.round((isOffice ? 12 : 11) * fontMultiplier)}px`;
+    const totalsSize = `${Math.round((isOffice ? 16 : 13) * fontMultiplier)}px`;
 
     const html = `
       <html>
@@ -2831,8 +2856,8 @@ export default function App() {
             }
             .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 15px; margin-bottom: 15px; }
             .logo { max-width: ${isOffice ? '60mm' : '40mm'}; margin-bottom: 10px; }
-            .store-name { font-size: ${isOffice ? '28px' : '18px'}; font-weight: bold; text-transform: uppercase; letter-spacing: -1px; }
-            .store-info { font-size: ${isOffice ? '12px' : '11px'}; line-height: 1.4; color: #333; }
+            .store-name { font-size: ${storeNameSize}; font-weight: bold; text-transform: uppercase; letter-spacing: -1px; }
+            .store-info { font-size: ${subFontSize}; line-height: 1.4; color: #333; }
             .ticket-info { font-size: ${fontSize}; margin: 15px 0; border-bottom: 1px dashed #ccc; padding-bottom: 10px; }
             .items { font-size: ${fontSize}; width: 100%; border-collapse: collapse; margin: 15px 0; }
             .items th { 
@@ -2845,10 +2870,10 @@ export default function App() {
             .items td { padding: 8px 0; border-bottom: 1px solid #eee; vertical-align: top; }
             .totals { 
               margin-top: 15px; 
-              font-size: ${isOffice ? '16px' : '13px'}; 
+              font-size: ${totalsSize}; 
               font-weight: bold; 
               border-top: 2px solid #000; 
-              padding-top: 10px; 
+              padding-top: 10px;
             }
             .row { display: flex; justify-content: space-between; margin: 4px 0; }
             .footer { 
@@ -7623,7 +7648,7 @@ export default function App() {
                 </div>
               </div>
             </motion.div>
-          ) : currentView === 'usuarios' ? (
+          ) : currentView === 'usuarios' && !isDemoMode ? (
             <motion.div
               key="usuarios-view"
               initial={{ opacity: 0, y: 20 }}
@@ -8034,6 +8059,35 @@ export default function App() {
                         </div>
                       </div>
 
+                      <div className="grid grid-cols-1 gap-4">
+                        <div>
+                          <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2 flex items-center gap-2">
+                            <Type size={14} className="text-blue-500" /> Tamaño de Fuente de Factura (Ticket)
+                          </label>
+                          <div className="flex gap-2">
+                            {[
+                              { id: 'sm', label: 'Pequeño', icon: 'T', sizeClass: 'text-[10px]' },
+                              { id: 'base', label: 'Normal', icon: 'T', sizeClass: 'text-sm' },
+                              { id: 'lg', label: 'Grande', icon: 'T', sizeClass: 'text-lg' }
+                            ].map((s) => (
+                              <button
+                                key={s.id}
+                                type="button"
+                                onClick={() => setTicketConfig({...ticketConfig, fontSize: s.id})}
+                                className={`flex-1 flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${
+                                  ticketConfig.fontSize === s.id 
+                                  ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-md translate-y-[-2px]' 
+                                  : 'bg-white border-gray-100 text-gray-400 hover:border-blue-200 shadow-sm'
+                                }`}
+                              >
+                                <span className={`${s.sizeClass} font-black mb-1`}>T</span>
+                                <span className="text-[9px] font-bold uppercase tracking-widest">{s.label}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="pt-2 border-t border-gray-100">
                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-3">Tipografía del Ticket</label>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -8191,7 +8245,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {(currentUser?.role === 'admin' || currentUser?.permissions.canManageUsers) && (
+                  {(currentUser?.role === 'admin' || currentUser?.permissions.canManageUsers) && !isDemoMode && (
                     <div className="bg-white p-6 rounded-3xl border-2 border-gray-100 shadow-sm text-left">
                       <h3 className="text-xl font-black text-gray-800 uppercase italic tracking-tighter mb-4 flex items-center gap-2">
                         <Shield size={20} className="text-red-500" /> Control de Acceso y Usuarios
