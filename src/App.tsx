@@ -1694,12 +1694,6 @@ export default function App() {
   const [modifySearchTerm, setModifySearchTerm] = useState('');
   const [newDeptName, setNewDeptName] = useState('');
 
-  // Refs for Barcode Scanner Support
-  const barcodeInputRef = useRef<HTMLInputElement>(null);
-  const descriptionInputRef = useRef<HTMLInputElement>(null);
-  const ventasSearchRef = useRef<HTMLInputElement>(null);
-  const modifySearchRef = useRef<HTMLInputElement>(null);
-
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
 
   // Auto-focus logic
@@ -1768,6 +1762,69 @@ export default function App() {
   const [financingCustomerFilter, setFinancingCustomerFilter] = useState<number | null>(null);
   const [showCommonProductDialog, setShowCommonProductDialog] = useState(false);
   const [showNoteDialog, setShowNoteDialog] = useState(false);
+
+  // Refs for Barcode Scanner Support
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const descriptionInputRef = useRef<HTMLInputElement>(null);
+  const ventasSearchRef = useRef<HTMLInputElement>(null);
+  const modifySearchRef = useRef<HTMLInputElement>(null);
+
+  // Barcode Scanner Integration (Compatible with any scanner)
+  const barcodeBufferRef = useRef<string>('');
+  const lastBarcodeKeyTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    const handleScannerInput = (e: KeyboardEvent) => {
+      // Only active in 'ventas' view and when not in checkout or other blocking dialogs
+      if (currentView !== 'ventas' || isCheckoutOpen || showNoteDialog || showCommonProductDialog) {
+        return;
+      }
+
+      // If focus is in another input (like customer search or name fields), don't intercept typing
+      if (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) {
+        // If it's the main POS search, we still capture the buffer, but we might let the input handle Enter
+        // to avoid double add. However, scanners are mostly used to "Add to Cart" directly.
+        if (document.activeElement !== ventasSearchRef.current) {
+           return;
+        }
+      }
+
+      const currentTime = Date.now();
+      const diff = currentTime - lastBarcodeKeyTimeRef.current;
+      lastBarcodeKeyTimeRef.current = currentTime;
+
+      // Typical scanner speed is < 50ms between characters. 
+      // If it's slower than 100ms, it's likely manual typing.
+      if (diff > 100) {
+        barcodeBufferRef.current = '';
+      }
+
+      if (e.key === 'Enter') {
+        const code = barcodeBufferRef.current.trim();
+        if (code.length >= 3) {
+          const product = productsList.find(p => p.barcode === code || p.id.toString() === code);
+          if (product) {
+            e.preventDefault();
+            e.stopPropagation();
+            addToCart(product);
+            showMessage(`Escaneado: ${product.name}`, 'success');
+            setSearchTerm(''); // Clear input in case scanner was typing there
+            barcodeBufferRef.current = '';
+            return;
+          }
+        }
+        // If Enter is pressed but we didn't add anything (maybe scanner suffix), clear buffer
+        barcodeBufferRef.current = '';
+      } else if (e.key.length === 1) {
+        // Scanners usually don't trigger Shift/Alt as separate keys but as modified chars
+        // We only append if it's a printable character
+        barcodeBufferRef.current += e.key;
+      }
+    };
+
+    window.addEventListener('keydown', handleScannerInput, true); // Use capture phase to be first
+    return () => window.removeEventListener('keydown', handleScannerInput, true);
+  }, [currentView, isCheckoutOpen, showNoteDialog, showCommonProductDialog, productsList]);
   const [saleNote, setSaleNote] = useState('');
   const [commonProductForm, setCommonProductForm] = useState({
     name: '',
