@@ -498,7 +498,7 @@ const DEFAULT_ADMIN: AppUser = {
   id: 1,
   name: 'Administrador',
   username: 'admin',
-  pin: '1234',
+  pin: '2626',
   role: 'admin',
   active: true,
   permissions: {
