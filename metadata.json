@@ -1,5 +1,6 @@
 {
   "name": "Y.G Facturación",
   "description": "Sistema Profesional de Facturación y Punto de Venta optimizado para escritorio.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

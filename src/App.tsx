@@ -234,6 +234,7 @@ interface Sale {
     changeDop: number;
   };
   status: 'completada' | 'cancelada' | 'devuelta';
+  employeeName?: string; // Added for service assignment
 }
 
 interface Promotion {
@@ -313,6 +314,7 @@ interface OpenAccount {
   createdAt: string;
   customerId?: number | null;
   turnNumber?: number; // Added for Turnos
+  employeeName?: string; // Added for turn assignment
 }
 
 interface Quotation {
@@ -1361,15 +1363,33 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(backupData)
       });
-      const result = await response.json();
-      if (result.success) {
-        showMessage('Guardado automático realizado con éxito', 'success');
+      
+      const contentType = response.headers.get("content-type");
+      if (response.ok && contentType && contentType.includes("application/json")) {
+        const result = await response.json();
+        if (result.success) {
+          showMessage('Guardado automático realizado con éxito', 'success');
+        } else {
+          throw new Error(result.error || 'Respuesta del servidor sin éxito');
+        }
       } else {
-        throw new Error(result.error);
+        const errorText = await response.text();
+        console.error("Backup server error response:", errorText);
+        // If we get HTML or error, it usually means the route doesn't exist or is not matching
+        if (errorText.includes('<!doctype') || errorText.includes('<html')) {
+          throw new Error('El servidor de respaldo no está disponible o devolvió una página HTML.');
+        }
+        throw new Error(`Error del servidor (${response.status}): ${errorText.substring(0, 50)}...`);
       }
     } catch (error) {
-      console.error("Backup error:", error);
-      showMessage('Error al guardar respaldo automático en servidor', 'error');
+      console.error("Backup error detail:", error);
+      // Solo mostramos mensaje si es error real, no si es solo falta de endpoint (e.g. en desktop sin server)
+      if (error instanceof Error && (error.message.includes('<!doctype') || error.message.includes('HTML'))) {
+         // Silently ignore or log less intrusively if it's the HTML/SPA fallback
+         console.warn("Auto-backup skipped: API endpoint not found (possibly running in desktop mode or standalone VPC)");
+      } else {
+        showMessage('Error al guardar respaldo automático en servidor', 'error');
+      }
     }
   };
 
@@ -1776,6 +1796,10 @@ export default function App() {
   const [financingCustomerFilter, setFinancingCustomerFilter] = useState<number | null>(null);
   const [showCommonProductDialog, setShowCommonProductDialog] = useState(false);
   const [showNoteDialog, setShowNoteDialog] = useState(false);
+  const [showTurnEmployeeDialog, setShowTurnEmployeeDialog] = useState(false);
+  const [selectedTurnEmployeeId, setSelectedTurnEmployeeId] = useState<number | null>(null);
+  const [manualTurnEmployeeName, setManualTurnEmployeeName] = useState('');
+  const [currentSaleEmployeeName, setCurrentSaleEmployeeName] = useState<string | null>(null);
 
   // Refs for Barcode Scanner Support
   const barcodeInputRef = useRef<HTMLInputElement>(null);
@@ -2399,6 +2423,7 @@ export default function App() {
           setCart(prev => [...prev, ...account.items]);
           setOpenAccounts(prev => prev.filter(a => a.id !== account.id));
           if (account.customerId) setSelectedCustomerId(account.customerId);
+          if (account.employeeName) setCurrentSaleEmployeeName(account.employeeName);
           showMessage(`Cuenta "${account.name}" cargada`, 'success');
         }
       });
@@ -2406,6 +2431,7 @@ export default function App() {
       setCart(account.items);
       setOpenAccounts(prev => prev.filter(a => a.id !== account.id));
       if (account.customerId) setSelectedCustomerId(account.customerId);
+      if (account.employeeName) setCurrentSaleEmployeeName(account.employeeName);
       showMessage(`Cuenta "${account.name}" cargada`, 'success');
     }
   };
@@ -2549,7 +2575,8 @@ export default function App() {
         rate: usdRate,
         received: parseFloat(usdPaidAmount),
         changeDop: parseFloat(usdPaidAmount) * usdRate - total
-      } : null
+      } : null,
+      employeeName: currentSaleEmployeeName || undefined
     };
     
     setSalesHistory(prev => [newSale, ...prev]);
@@ -2613,6 +2640,7 @@ export default function App() {
       setIsCheckoutOpen(false);
       setCart([]);
       setPaidAmount('');
+      setCurrentSaleEmployeeName(null);
     }, 2000);
   };
 
@@ -2825,7 +2853,8 @@ export default function App() {
           
           <div class="info">
             <strong>Fecha:</strong> ${new Date(account.createdAt).toLocaleString()}<br>
-            <strong>Cliente:</strong> ${account.name}
+            <strong>Cliente:</strong> ${account.name}<br>
+            ${account.employeeName ? `<strong>Atendido por:</strong> ${account.employeeName}` : ''}
           </div>
 
           <div class="items-list">
@@ -2866,7 +2895,12 @@ export default function App() {
       showMessage('Seleccione servicios o productos antes de generar un turno', 'error');
       return;
     }
+    setManualTurnEmployeeName('');
+    setSelectedTurnEmployeeId(null);
+    setShowTurnEmployeeDialog(true);
+  };
 
+  const handleConfirmGenerateTurn = () => {
     const currentTurn = nextTurnNumber;
     const name = selectedCustomerId 
       ? customersList.find(c => c.id === selectedCustomerId)?.name || `Turno #${currentTurn}`
@@ -2879,7 +2913,8 @@ export default function App() {
       total: total,
       createdAt: new Date().toISOString(),
       customerId: selectedCustomerId,
-      turnNumber: currentTurn
+      turnNumber: currentTurn,
+      employeeName: manualTurnEmployeeName.trim() || undefined
     };
 
     setOpenAccounts(prev => [...prev, newAccount]);
@@ -2889,7 +2924,18 @@ export default function App() {
     
     setCart([]);
     setSelectedCustomerId(null);
+    setShowTurnEmployeeDialog(false);
     showMessage(`Turno #${currentTurn} generado exitosamente`, 'success');
+  };
+
+  const handleResetTurnCounter = () => {
+    setConfirmDialog({
+      text: '¿Deseas reiniciar el contador de turnos al #1?',
+      onConfirm: () => {
+        setNextTurnNumber(1);
+        showMessage('Contador de turnos reiniciado al #1', 'success');
+      }
+    });
   };
 
   const handlePrintPreReceipt = (account: OpenAccount) => {
@@ -3115,6 +3161,7 @@ export default function App() {
             <div class="row"><span>CAJERO:</span> <span>${sale.cashier}</span></div>
             ${sale.customerId ? `<div class="row"><span>CLIENTE:</span> <span>${customersList.find(c => c.id === sale.customerId)?.name || 'Cliente'}</span></div>` : ''}
             <div class="row"><span>METODO PAGO:</span> <span style="text-transform: uppercase;">${sale.paymentMethod}</span></div>
+            ${sale.employeeName ? `<div class="row"><span>EMPLEADO:</span> <span>${sale.employeeName}</span></div>` : ''}
             ${sale.status !== 'completada' ? `<div class="row" style="color: red; font-weight: bold; border: 2px solid red; padding: 4px; text-align: center; margin: 10px 0; text-transform: uppercase; display: block; font-size: 1.2em;">ESTADO: ${sale.status}</div>` : ''}
           </div>
 
@@ -8400,8 +8447,33 @@ export default function App() {
 
                   <div className="bg-white p-6 rounded-3xl border-2 border-gray-100 shadow-sm text-left">
                     <h3 className="text-xl font-black text-gray-800 uppercase italic tracking-tighter mb-4 flex items-center gap-2">
-                       <Archive size={20} className="text-purple-500" /> Seguridad y Datos Locales
+                       <Ticket size={20} className="text-blue-500" /> Gestión de Turnos
                     </h3>
+                    <p className="text-[10px] font-bold text-gray-400 mb-6 italic">
+                      Administre el contador de turnos para sus clientes.
+                    </p>
+                    <div className="flex items-center justify-between p-6 bg-blue-50 border-2 border-blue-100 rounded-2xl">
+                      <div className="flex items-center gap-4">
+                        <div className="p-3 bg-blue-200 rounded-xl">
+                          <Clock size={24} className="text-blue-700" />
+                        </div>
+                        <div className="text-left">
+                          <span className="text-xs font-black uppercase tracking-widest block">Siguiente Turno: #{nextTurnNumber}</span>
+                          <span className="text-[10px] font-bold opacity-60">
+                            Valor actual del contador
+                          </span>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={handleResetTurnCounter}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase shadow-md hover:bg-blue-700 transition-all active:scale-95"
+                      >
+                        Reiniciar a #1
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-3xl border-2 border-gray-100 shadow-sm text-left">
                     <p className="text-[10px] font-bold text-gray-400 mb-6 italic">
                       Proteja su información exportando una copia o restaure información previa.
                     </p>
@@ -9633,6 +9705,85 @@ export default function App() {
                   className="bg-yellow-500 text-white px-12 py-4 rounded-2xl font-black uppercase tracking-widest shadow-[0_5px_0_0_rgba(202,138,4,1)] active:translate-y-1 active:shadow-none transition-all flex items-center gap-2"
                 >
                   Cerrar Historial
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal para Seleccionar Empleado para el Turno */}
+      <AnimatePresence>
+        {showTurnEmployeeDialog && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-md z-[150] flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 30 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 30 }}
+              className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col border-4 border-blue-500"
+            >
+              <div className="bg-gradient-to-r from-blue-600 to-blue-400 p-8 text-white relative text-center">
+                <Ticket size={48} className="mx-auto mb-4 opacity-50" />
+                <h3 className="text-3xl font-black uppercase italic tracking-tighter">Asignar Turno</h3>
+                <p className="font-bold opacity-80">Escriba o seleccione el empleado responsable</p>
+              </div>
+
+              <div className="p-8 space-y-6">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest block mb-2">Nombre del Empleado</label>
+                  <input 
+                    type="text"
+                    value={manualTurnEmployeeName}
+                    onChange={(e) => {
+                      setManualTurnEmployeeName(e.target.value);
+                      setSelectedTurnEmployeeId(null);
+                    }}
+                    placeholder="Escriba el nombre aquí..."
+                    className="w-full bg-gray-50 border-2 border-gray-200 rounded-2xl p-4 font-bold text-gray-800 focus:border-blue-500 outline-none transition-all shadow-sm"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest block mb-2">O seleccione del personal:</label>
+                  <div className="grid grid-cols-2 gap-3 max-h-48 overflow-y-auto p-1 custom-scrollbar">
+                    {usersList.map(user => (
+                      <button
+                        key={user.id}
+                        onClick={() => {
+                          setSelectedTurnEmployeeId(user.id);
+                          setManualTurnEmployeeName(user.name);
+                        }}
+                        className={`p-3 rounded-xl border-2 transition-all font-bold text-sm ${
+                          selectedTurnEmployeeId === user.id 
+                          ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-inner' 
+                          : 'bg-white border-gray-100 text-gray-600 hover:border-blue-200'
+                        }`}
+                      >
+                        {user.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-8 bg-gray-50 border-t-2 border-gray-100 flex gap-4">
+                <button 
+                  onClick={() => setShowTurnEmployeeDialog(false)}
+                  className="flex-1 py-4 rounded-2xl font-black uppercase tracking-widest text-gray-400 hover:text-gray-600 transition-all font-bold"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={handleConfirmGenerateTurn}
+                  className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-[0_5px_0_0_rgba(29,78,216,1)] active:translate-y-1 active:shadow-none transition-all"
+                >
+                  Generar Turno
                 </button>
               </div>
             </motion.div>
