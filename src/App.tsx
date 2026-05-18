@@ -312,6 +312,7 @@ interface OpenAccount {
   total: number;
   createdAt: string;
   customerId?: number | null;
+  turnNumber?: number; // Added for Turnos
 }
 
 interface Quotation {
@@ -1017,6 +1018,15 @@ export default function App() {
     }
   });
 
+  const [nextTurnNumber, setNextTurnNumber] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('yg_next_turn_number');
+      return saved ? parseInt(saved) : 1;
+    } catch {
+      return 1;
+    }
+  });
+
   const [quotationsList, setQuotationsList] = useState<Quotation[]>(() => {
     try {
       const saved = localStorage.getItem('yg_quotations');
@@ -1033,6 +1043,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('yg_open_accounts', JSON.stringify(openAccounts));
   }, [openAccounts]);
+
+  useEffect(() => {
+    localStorage.setItem('yg_next_turn_number', nextTurnNumber.toString());
+  }, [nextTurnNumber]);
 
   const [usersList, setUsersList] = useState<AppUser[]>(() => {
     try {
@@ -2756,6 +2770,128 @@ export default function App() {
     printWindow.document.close();
   };
 
+  const handlePrintTurnTicket = (account: OpenAccount) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const size = ticketConfig.printSize || '80mm';
+    const isOffice = size === 'office';
+    const width = isOffice ? '210mm' : size;
+    const padding = isOffice ? '20mm' : '5mm';
+    
+    let fontMultiplier = 1;
+    if (ticketConfig.fontSize === 'sm') fontMultiplier = 0.8;
+    if (ticketConfig.fontSize === 'lg') fontMultiplier = 1.25;
+
+    const baseFontSize = size === '58mm' ? 10 : (isOffice ? 14 : 12);
+    const fontSize = `${Math.round(baseFontSize * fontMultiplier)}px`;
+
+    const html = `
+      <html>
+        <head>
+          <title>Ticket de Turno - #${account.turnNumber}</title>
+          <style>
+             @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=JetBrains+Mono:wght@400;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Space+Grotesk:wght@400;700&family=Outfit:wght@400;700&family=Anton&family=Satisfy&display=swap');
+            body { 
+              font-family: ${ticketConfig.fontFamily || (isOffice ? "'Inter', sans-serif" : "'Courier New', Courier, monospace")}; 
+              font-weight: ${ticketConfig.isBold ? 'bold' : 'normal'};
+              width: ${width}; 
+              margin: 0 auto; 
+              padding: ${padding};
+              color: #000;
+              text-align: center;
+            }
+            .header { border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 15px; }
+            .store-name { font-size: 14px; font-weight: bold; text-transform: uppercase; }
+            .turn-label { font-size: 16px; font-weight: 900; margin-top: 10px; text-transform: uppercase; }
+            .turn-number { font-size: 72px; font-weight: 900; margin: 10px 0; border: 4px solid #000; display: inline-block; padding: 10px 30px; border-radius: 20px; }
+            .info { font-size: ${fontSize}; margin: 15px 0; }
+            .items-list { text-align: left; font-size: ${fontSize}; margin: 15px 0; border-top: 1px dashed #000; padding-top: 10px; }
+            .footer { margin-top: 20px; font-size: 10px; opacity: 0.7; font-style: italic; }
+            @media print {
+              @page { margin: 0; }
+              body { margin: 0 auto; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            ${ticketConfig.showLogo && ticketConfig.logo ? `<img src="${ticketConfig.logo}" style="max-width: 40mm; margin-bottom: 5px;" />` : ''}
+            <div class="store-name">${ticketConfig.storeName}</div>
+          </div>
+          
+          <div class="turn-label">Su Turno Es:</div>
+          <div class="turn-number">${account.turnNumber}</div>
+          
+          <div class="info">
+            <strong>Fecha:</strong> ${new Date(account.createdAt).toLocaleString()}<br>
+            <strong>Cliente:</strong> ${account.name}
+          </div>
+
+          <div class="items-list">
+            <div style="font-weight: bold; margin-bottom: 5px; text-transform: uppercase; font-size: 10px; border-bottom: 1px solid #000;">Servicios/Productos:</div>
+            ${account.items.map(item => `
+              <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                <span>${item.quantity}x ${item.name}</span>
+                <span>$${(item.price * item.quantity).toFixed(2)}</span>
+              </div>
+            `).join('')}
+            <div style="display: flex; justify-content: space-between; margin-top: 8px; font-weight: bold; font-size: 14px; border-top: 1px solid #000; padding-top: 4px;">
+              <span>TOTAL ESTIMADO:</span>
+              <span>$${account.total.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div class="footer">
+            Presente este ticket para pagar su servicio.<br>
+            ¡Gracias por preferirnos!
+          </div>
+
+          <script>
+            setTimeout(() => {
+              window.print();
+              window.close();
+            }, 500);
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  const handleGenerateTurn = () => {
+    if (cart.length === 0) {
+      showMessage('Seleccione servicios o productos antes de generar un turno', 'error');
+      return;
+    }
+
+    const currentTurn = nextTurnNumber;
+    const name = selectedCustomerId 
+      ? customersList.find(c => c.id === selectedCustomerId)?.name || `Turno #${currentTurn}`
+      : `Turno #${currentTurn}`;
+
+    const newAccount: OpenAccount = {
+      id: Date.now(),
+      name: name,
+      items: [...cart],
+      total: total,
+      createdAt: new Date().toISOString(),
+      customerId: selectedCustomerId,
+      turnNumber: currentTurn
+    };
+
+    setOpenAccounts(prev => [...prev, newAccount]);
+    setNextTurnNumber(prev => prev + 1);
+    
+    handlePrintTurnTicket(newAccount);
+    
+    setCart([]);
+    setSelectedCustomerId(null);
+    showMessage(`Turno #${currentTurn} generado exitosamente`, 'success');
+  };
+
   const handlePrintPreReceipt = (account: OpenAccount) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
@@ -4003,30 +4139,39 @@ export default function App() {
                               <button
                                 key={account.id}
                                 onClick={() => handleRecallAccount(account)}
-                                className="bg-yellow-400 text-red-700 px-4 py-2 rounded-xl text-[10px] font-black flex items-center gap-2 shadow-md hover:bg-yellow-300 transition-all group"
+                                className={`${account.turnNumber ? 'bg-blue-600 text-white' : 'bg-yellow-400 text-red-700'} px-4 py-2 rounded-xl text-[10px] font-black flex items-center gap-2 shadow-md hover:opacity-90 transition-all group`}
                               >
+                                {account.turnNumber && (
+                                  <div className="bg-white text-blue-600 px-1.5 py-0.5 rounded-lg text-[9px] font-black">
+                                    #{account.turnNumber}
+                                  </div>
+                                )}
                                 <span className="truncate max-w-[100px]">{account.name}</span>
                                 <span className="opacity-60">${account.total.toFixed(0)}</span>
                                 <div className="flex items-center gap-1">
                                   <div 
-                                    className="hover:bg-red-700/20 p-1 rounded-full transition-colors"
+                                    className="hover:bg-black/10 p-1 rounded-full transition-colors"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handlePrintPreReceipt(account);
+                                      if (account.turnNumber) {
+                                        handlePrintTurnTicket(account);
+                                      } else {
+                                        handlePrintPreReceipt(account);
+                                      }
                                     }}
-                                    title="Imprimir Pre-Cuenta"
+                                    title={account.turnNumber ? "Re-imprimir Turno" : "Imprimir Pre-Cuenta"}
                                   >
-                                    <Printer size={12} className="text-red-700 opacity-70 group-hover:opacity-100" />
+                                    <Printer size={12} className="opacity-70 group-hover:opacity-100" />
                                   </div>
                                   <div 
-                                    className="hover:bg-red-700/20 p-1 rounded-full transition-colors"
+                                    className="hover:bg-black/10 p-1 rounded-full transition-colors"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleDeleteAccount(account.id);
                                     }}
-                                    title="Eliminar Cuenta"
+                                    title="Eliminar"
                                   >
-                                    <X size={12} className="text-red-700 opacity-70 group-hover:opacity-100" />
+                                    <X size={12} className="opacity-70 group-hover:opacity-100" />
                                   </div>
                                 </div>
                               </button>
@@ -4206,31 +4351,44 @@ export default function App() {
                     </div>
                     
                     <div className="flex flex-col gap-3">
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-3 gap-2">
                         <motion.button 
                           whileTap={{ scale: 0.95 }}
                           onClick={handleHoldCart}
                           disabled={cart.length === 0}
-                          className={`w-full py-4 rounded-2xl font-black text-xs uppercase transition-all flex items-center justify-center gap-2 shadow-lg border-2 ${
+                          className={`py-3 rounded-xl font-black text-[10px] uppercase transition-all flex flex-col items-center justify-center gap-1 shadow-lg border-2 ${
                             cart.length === 0 
                             ? 'bg-red-800 text-red-400 opacity-50 cursor-not-allowed border-red-700' 
                             : 'bg-red-700 text-white hover:bg-red-600 border-red-500'
                           }`}
                         >
-                          <Clock size={16} /> En Espera
+                          <Clock size={14} /> Espera
+                        </motion.button>
+
+                        <motion.button 
+                          whileTap={{ scale: 0.95 }}
+                          onClick={handleGenerateTurn}
+                          disabled={cart.length === 0}
+                          className={`py-3 rounded-xl font-black text-[10px] uppercase transition-all flex flex-col items-center justify-center gap-1 shadow-lg border-2 ${
+                            cart.length === 0 
+                            ? 'bg-blue-800 text-blue-400 opacity-50 cursor-not-allowed border-blue-700' 
+                            : 'bg-blue-600 text-white hover:bg-blue-500 border-blue-400'
+                          }`}
+                        >
+                          <Ticket size={14} /> Turno
                         </motion.button>
 
                         <motion.button 
                           whileTap={{ scale: 0.95 }}
                           onClick={handleCreateQuotation}
                           disabled={cart.length === 0}
-                          className={`w-full py-4 rounded-2xl font-black text-xs uppercase transition-all flex items-center justify-center gap-2 shadow-lg border-2 ${
+                          className={`py-3 rounded-xl font-black text-[10px] uppercase transition-all flex flex-col items-center justify-center gap-1 shadow-lg border-2 ${
                             cart.length === 0 
                             ? 'bg-orange-800 text-orange-400 opacity-50 cursor-not-allowed border-orange-700' 
                             : 'bg-orange-700 text-white hover:bg-orange-600 border-orange-500'
                           }`}
                         >
-                          <FileText size={16} /> Cotizar
+                          <FileText size={14} /> Cotizar
                         </motion.button>
                       </div>
 
