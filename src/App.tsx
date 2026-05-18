@@ -558,17 +558,57 @@ export default function App() {
       } else {
         setBusinessInfo(null);
         // Revenir a datos locales
-        const savedProducts = localStorage.getItem('yg_products');
-        setProductsList(savedProducts ? JSON.parse(savedProducts) : PRODUCTS);
+        try {
+          const savedProducts = localStorage.getItem('yg_products');
+          if (savedProducts) {
+            const parsed = JSON.parse(savedProducts);
+            setProductsList(Array.isArray(parsed) ? parsed : PRODUCTS);
+          } else {
+            setProductsList(PRODUCTS);
+          }
+        } catch (e) {
+          console.error("Error loading products from local storage", e);
+          setProductsList(PRODUCTS);
+        }
         
-        const savedCustomers = localStorage.getItem('yg_customers');
-        setCustomersList(savedCustomers ? JSON.parse(savedCustomers) : []);
+        try {
+          const savedCustomers = localStorage.getItem('yg_customers');
+          if (savedCustomers) {
+            const parsed = JSON.parse(savedCustomers);
+            setCustomersList(Array.isArray(parsed) ? parsed : []);
+          } else {
+            setCustomersList([]);
+          }
+        } catch (e) {
+          console.error("Error loading customers from local storage", e);
+          setCustomersList([]);
+        }
         
-        const savedUsers = localStorage.getItem('yg_users');
-        setUsersList(savedUsers ? JSON.parse(savedUsers) : [DEFAULT_ADMIN]);
+        try {
+          const savedUsers = localStorage.getItem('yg_users');
+          if (savedUsers) {
+            const parsed = JSON.parse(savedUsers);
+            setUsersList(Array.isArray(parsed) ? parsed : [DEFAULT_ADMIN]);
+          } else {
+            setUsersList([DEFAULT_ADMIN]);
+          }
+        } catch (e) {
+          console.error("Error loading users from local storage", e);
+          setUsersList([DEFAULT_ADMIN]);
+        }
         
-        const savedSales = localStorage.getItem('yg_sales');
-        setSalesHistory(savedSales ? JSON.parse(savedSales) : []);
+        try {
+          const savedSales = localStorage.getItem('yg_sales');
+          if (savedSales) {
+            const parsed = JSON.parse(savedSales);
+            setSalesHistory(Array.isArray(parsed) ? parsed : []);
+          } else {
+            setSalesHistory([]);
+          }
+        } catch (e) {
+          console.error("Error loading sales from local storage", e);
+          setSalesHistory([]);
+        }
       }
     });
     return () => unsubscribe();
@@ -892,49 +932,49 @@ export default function App() {
   const [corteDate, setCorteDate] = useState(new Date().toISOString().split('T')[0]);
   const [abonoMethod, setAbonoMethod] = useState('efectivo');
   const [initialCash, setInitialCash] = useState<number>(() => {
-    const saved = localStorage.getItem('yg_initial_cash');
-    return saved ? parseFloat(saved) : 0;
+    try {
+      const saved = localStorage.getItem('yg_initial_cash');
+      const parsed = saved ? parseFloat(saved) : 0;
+      return isNaN(parsed) ? 0 : parsed;
+    } catch {
+      return 0;
+    }
   });
   const [usdRate, setUsdRate] = useState<number>(() => {
-    const saved = localStorage.getItem('yg_usd_rate');
-    return saved ? parseFloat(saved) : 58.5;
+    try {
+      const saved = localStorage.getItem('yg_usd_rate');
+      const parsed = saved ? parseFloat(saved) : 58.5;
+      return isNaN(parsed) ? 58.5 : parsed;
+    } catch {
+      return 58.5;
+    }
   });
 
   const [ticketConfig, setTicketConfig] = useState(() => {
+    const defaultTicket = {
+      storeName: 'Y.G Facturación',
+      address: 'Calle Principal #123, Sector Centro',
+      phone: '809-555-0123',
+      rnc: '101-23456-7',
+      website: 'www.ygmarket.com',
+      message: '¡Gracias por su compra!',
+      showLogo: true,
+      logo: 'https://picsum.photos/seed/shop/200/200',
+      printSize: '80mm',
+      openDrawerOnPrint: true,
+      fontFamily: '"Inter", sans-serif',
+      isBold: false,
+      fontSize: 'base'
+    };
     try {
       const saved = localStorage.getItem('yg_ticket_config');
-      const defaultTicket = {
-        storeName: 'Y.G Facturación',
-        address: 'Calle Principal #123, Sector Centro',
-        phone: '809-555-0123',
-        rnc: '101-23456-7',
-        website: 'www.ygmarket.com',
-        message: '¡Gracias por su compra!',
-        showLogo: true,
-        logo: 'https://picsum.photos/seed/shop/200/200',
-        printSize: '80mm',
-        openDrawerOnPrint: true,
-        fontFamily: '"Inter", sans-serif',
-        isBold: false,
-        fontSize: 'base'
-      };
-      return saved ? { ...defaultTicket, ...JSON.parse(saved) } : defaultTicket;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return (parsed && typeof parsed === 'object') ? { ...defaultTicket, ...parsed } : defaultTicket;
+      }
+      return defaultTicket;
     } catch {
-      return {
-        storeName: 'Y.G Facturación',
-        address: 'Calle Principal #123, Sector Centro',
-        phone: '809-555-0123',
-        rnc: '101-23456-7',
-        website: 'www.ygmarket.com',
-        message: '¡Gracias por su compra!',
-        showLogo: true,
-        logo: 'https://picsum.photos/seed/shop/200/200',
-        printSize: '80mm',
-        openDrawerOnPrint: true,
-        fontFamily: '"Inter", sans-serif',
-        isBold: false,
-        fontSize: 'base'
-      };
+      return defaultTicket;
     }
   });
 
@@ -960,7 +1000,8 @@ export default function App() {
   const [backupConfig, setBackupConfig] = useState(() => {
     try {
       const saved = localStorage.getItem('yg_backup_config');
-      return saved ? JSON.parse(saved) : { autoBackup: true, backupInterval: 30 };
+      const parsed = saved ? JSON.parse(saved) : { autoBackup: true, backupInterval: 30 };
+      return (parsed && typeof parsed === 'object') ? parsed : { autoBackup: true, backupInterval: 30 };
     } catch {
       return { autoBackup: true, backupInterval: 30 };
     }
@@ -1014,7 +1055,8 @@ export default function App() {
   const [openAccounts, setOpenAccounts] = useState<OpenAccount[]>(() => {
     try {
       const saved = localStorage.getItem('yg_open_accounts');
-      return saved ? JSON.parse(saved) : [];
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
     }
@@ -1023,7 +1065,11 @@ export default function App() {
   const [nextTurnNumber, setNextTurnNumber] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('yg_next_turn_number');
-      return saved ? parseInt(saved) : 1;
+      if (saved) {
+        const parsed = parseInt(saved);
+        return isNaN(parsed) ? 1 : parsed;
+      }
+      return 1;
     } catch {
       return 1;
     }
@@ -1032,7 +1078,8 @@ export default function App() {
   const [quotationsList, setQuotationsList] = useState<Quotation[]>(() => {
     try {
       const saved = localStorage.getItem('yg_quotations');
-      return saved ? JSON.parse(saved) : [];
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
     }
@@ -1047,13 +1094,14 @@ export default function App() {
   }, [openAccounts]);
 
   useEffect(() => {
-    localStorage.setItem('yg_next_turn_number', nextTurnNumber.toString());
+    localStorage.setItem('yg_next_turn_number', (Number(nextTurnNumber) || 1).toString());
   }, [nextTurnNumber]);
 
   const [usersList, setUsersList] = useState<AppUser[]>(() => {
     try {
       const saved = localStorage.getItem('yg_users');
-      return saved ? JSON.parse(saved) : [DEFAULT_ADMIN];
+      const parsed = saved ? JSON.parse(saved) : [DEFAULT_ADMIN];
+      return Array.isArray(parsed) ? parsed : [DEFAULT_ADMIN];
     } catch {
       return [DEFAULT_ADMIN];
     }
@@ -2161,7 +2209,7 @@ export default function App() {
     setEditingQuantityId(null);
   };
 
-  const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const subtotal = cart.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
   
   const selectedCustomerData = useMemo(() => {
     return customersList.find(c => c.id === selectedCustomerId);
@@ -2172,9 +2220,9 @@ export default function App() {
     return (subtotal * selectedCustomerData.discountPercentage) / 100;
   }, [subtotal, selectedCustomerData]);
 
-  const subtotalAfterDiscount = subtotal - customerDiscountAmount;
-  const tipAmount = (subtotalAfterDiscount * tipPercentage) / 100;
-  const total = subtotalAfterDiscount + tipAmount;
+  const subtotalAfterDiscount = (subtotal || 0) - (customerDiscountAmount || 0);
+  const tipAmount = ((subtotalAfterDiscount || 0) * (tipPercentage || 0)) / 100;
+  const total = (subtotalAfterDiscount || 0) + (tipAmount || 0);
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   const handleHoldCart = () => {
@@ -2799,8 +2847,12 @@ export default function App() {
   };
 
   const handlePrintTurnTicket = (account: OpenAccount) => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
+    try {
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        showMessage('No se pudo abrir la ventana de impresión. Por favor, permita las ventanas emergentes.', 'error');
+        return;
+      }
 
     const size = ticketConfig.printSize || '80mm';
     const isOffice = size === 'office';
@@ -2843,33 +2895,36 @@ export default function App() {
           </style>
         </head>
         <body>
-          <div class="header">
-            ${ticketConfig.showLogo && ticketConfig.logo ? `<img src="${ticketConfig.logo}" style="max-width: 40mm; margin-bottom: 5px;" />` : ''}
-            <div class="store-name">${ticketConfig.storeName}</div>
-          </div>
-          
-          <div class="turn-label">Su Turno Es:</div>
-          <div class="turn-number">${account.turnNumber}</div>
-          
-          <div class="info">
-            <strong>Fecha:</strong> ${new Date(account.createdAt).toLocaleString()}<br>
-            <strong>Cliente:</strong> ${account.name}<br>
-            ${account.employeeName ? `<strong>Atendido por:</strong> ${account.employeeName}` : ''}
-          </div>
-
-          <div class="items-list">
-            <div style="font-weight: bold; margin-bottom: 5px; text-transform: uppercase; font-size: 10px; border-bottom: 1px solid #000;">Servicios/Productos:</div>
-            ${account.items.map(item => `
-              <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
-                <span>${item.quantity}x ${item.name}</span>
-                <span>$${(item.price * item.quantity).toFixed(2)}</span>
-              </div>
-            `).join('')}
-            <div style="display: flex; justify-content: space-between; margin-top: 8px; font-weight: bold; font-size: 14px; border-top: 1px solid #000; padding-top: 4px;">
-              <span>TOTAL ESTIMADO:</span>
-              <span>$${account.total.toFixed(2)}</span>
+            <div class="header">
+              ${ticketConfig.showLogo && ticketConfig.logo ? `<img src="${ticketConfig.logo}" style="max-width: 40mm; margin-bottom: 5px;" />` : ''}
+              <div class="store-name">${ticketConfig.storeName || 'TIENDA'}</div>
             </div>
-          </div>
+            
+            <div class="turn-label">Su Turno Es:</div>
+            <div class="turn-number">${account.turnNumber || '0'}</div>
+            
+            <div class="info">
+              <strong>Fecha:</strong> ${(() => {
+                const d = account.createdAt ? new Date(account.createdAt) : new Date();
+                return (d instanceof Date && !isNaN(d.getTime())) ? d.toLocaleString() : new Date().toLocaleString();
+              })()}<br>
+              <strong>Cliente:</strong> ${account.name || 'Cliente'}<br>
+              ${account.employeeName ? `<strong>Atendido por:</strong> ${account.employeeName}` : ''}
+            </div>
+
+            <div class="items-list">
+              <div style="font-weight: bold; margin-bottom: 5px; text-transform: uppercase; font-size: 10px; border-bottom: 1px solid #000;">Servicios/Productos:</div>
+              ${Array.isArray(account.items) ? account.items.map(item => `
+                <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                  <span>${item.quantity || 1}x ${item.name || 'Item'}</span>
+                  <span>$${((item.price || 0) * (item.quantity || 1)).toFixed(2)}</span>
+                </div>
+              `).join('') : ''}
+              <div style="display: flex; justify-content: space-between; margin-top: 8px; font-weight: bold; font-size: 14px; border-top: 1px solid #000; padding-top: 4px;">
+                <span>TOTAL ESTIMADO:</span>
+                <span>$${(account.total || 0).toFixed(2)}</span>
+              </div>
+            </div>
 
           <div class="footer">
             Presente este ticket para pagar su servicio.<br>
@@ -2886,8 +2941,12 @@ export default function App() {
       </html>
     `;
 
-    printWindow.document.write(html);
-    printWindow.document.close();
+      printWindow.document.write(html);
+      printWindow.document.close();
+    } catch (error) {
+      console.error("Error printing turn ticket:", error);
+      showMessage('Error al intentar imprimir el ticket', 'error');
+    }
   };
 
   const handleGenerateTurn = () => {
@@ -2901,31 +2960,43 @@ export default function App() {
   };
 
   const handleConfirmGenerateTurn = () => {
-    const currentTurn = nextTurnNumber;
-    const name = selectedCustomerId 
-      ? customersList.find(c => c.id === selectedCustomerId)?.name || `Turno #${currentTurn}`
-      : `Turno #${currentTurn}`;
+    try {
+      const currentTurn = nextTurnNumber || 1;
+      const name = selectedCustomerId 
+        ? customersList.find(c => c.id === selectedCustomerId)?.name || `Turno #${currentTurn}`
+        : `Turno #${currentTurn}`;
 
-    const newAccount: OpenAccount = {
-      id: Date.now(),
-      name: name,
-      items: [...cart],
-      total: total,
-      createdAt: new Date().toISOString(),
-      customerId: selectedCustomerId,
-      turnNumber: currentTurn,
-      employeeName: manualTurnEmployeeName.trim() || undefined
-    };
+      const newAccount: OpenAccount = {
+        id: Date.now(),
+        name: name,
+        items: Array.isArray(cart) ? [...cart] : [],
+        total: (typeof total === 'number' && !isNaN(total)) ? total : 0,
+        createdAt: new Date().toISOString(),
+        customerId: selectedCustomerId,
+        turnNumber: currentTurn,
+        employeeName: (manualTurnEmployeeName || '').trim() || undefined
+      };
 
-    setOpenAccounts(prev => [...prev, newAccount]);
-    setNextTurnNumber(prev => prev + 1);
-    
-    handlePrintTurnTicket(newAccount);
-    
-    setCart([]);
-    setSelectedCustomerId(null);
-    setShowTurnEmployeeDialog(false);
-    showMessage(`Turno #${currentTurn} generado exitosamente`, 'success');
+      setOpenAccounts(prev => Array.isArray(prev) ? [...prev, newAccount] : [newAccount]);
+      setNextTurnNumber(prev => {
+        const nextValue = (typeof prev === 'number' && !isNaN(prev)) ? prev + 1 : 2;
+        return nextValue;
+      });
+      
+      setCart([]);
+      setSelectedCustomerId(null);
+      setShowTurnEmployeeDialog(false);
+      
+      // Delay printing slightly to ensure state updates don't feel "frozen"
+      setTimeout(() => {
+        handlePrintTurnTicket(newAccount);
+        showMessage(`Turno #${currentTurn} generado exitosamente`, 'success');
+      }, 100);
+      
+    } catch (error) {
+      console.error("Error generating turn:", error);
+      showMessage('Error inesperado al generar el turno', 'error');
+    }
   };
 
   const handleResetTurnCounter = () => {
@@ -3896,7 +3967,7 @@ export default function App() {
                   }}
                   className="flex-1 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black transition-colors shadow-[0_4px_0_0_rgba(185,28,28,1)] active:translate-y-1 active:shadow-none"
                 >
-                  SÍ, ELIMINAR
+                  CONFIRMAR
                 </button>
               </div>
             </motion.div>
@@ -4393,7 +4464,7 @@ export default function App() {
                       
                       <div className="flex justify-between items-center text-2xl lg:text-4xl font-black pt-2 gap-4">
                         <span className="shrink-0">TOTAL:</span>
-                        <span className="text-yellow-300 truncate" title={`$${total.toFixed(2)}`}>${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        <span className="text-yellow-300 truncate" title={`$${(Number(total) || 0).toFixed(2)}`}>${(Number(total) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                       </div>
                     </div>
                     
@@ -8093,14 +8164,25 @@ export default function App() {
                                         <p className="font-black text-white truncate text-sm uppercase italic tracking-tighter">{bus.name || 'Sin Nombre'}</p>
                                         <p className="text-[9px] font-bold text-red-200 truncate">{bus.email}</p>
                                      </div>
-                                     <div className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${new Date(bus.subscriptionEndDate) > new Date() ? 'bg-green-400 text-green-900 border border-green-300' : 'bg-red-400 text-red-900 border border-red-300'}`}>
-                                        {new Date(bus.subscriptionEndDate) > new Date() ? 'Activo' : 'Vencido'}
+                                     <div className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${(() => {
+                                         const nextDate = new Date(bus.subscriptionEndDate);
+                                         return (nextDate instanceof Date && !isNaN(nextDate.getTime()) && nextDate > new Date()) ? 'bg-green-400 text-green-900 border border-green-300' : 'bg-red-400 text-red-900 border border-red-300';
+                                       })()}`}>
+                                        {(() => {
+                                          const nextDate = new Date(bus.subscriptionEndDate);
+                                          return (nextDate instanceof Date && !isNaN(nextDate.getTime()) && nextDate > new Date()) ? 'Activo' : 'Vencido';
+                                        })()}
                                      </div>
                                   </div>
                                   <div className="flex items-center justify-between gap-2 mt-4 pt-4 border-t border-white/10">
                                      <div className="min-w-0">
                                         <p className="text-[8px] font-black text-white/40 uppercase tracking-widest">Expira:</p>
-                                        <p className="text-xs font-black text-white">{new Date(bus.subscriptionEndDate).toLocaleDateString()}</p>
+                                        <p className="text-xs font-black text-white">
+                                          {(() => {
+                                            const d = new Date(bus.subscriptionEndDate);
+                                            return (d instanceof Date && !isNaN(d.getTime())) ? d.toLocaleDateString() : 'N/A';
+                                          })()}
+                                        </p>
                                      </div>
                                      <div className="flex gap-1">
                                         <button 
@@ -8474,6 +8556,9 @@ export default function App() {
                   </div>
 
                   <div className="bg-white p-6 rounded-3xl border-2 border-gray-100 shadow-sm text-left">
+                    <h3 className="text-xl font-black text-gray-800 uppercase italic tracking-tighter mb-4 flex items-center gap-2">
+                       <Archive size={20} className="text-purple-500" /> Seguridad y Datos Locales
+                    </h3>
                     <p className="text-[10px] font-bold text-gray-400 mb-6 italic">
                       Proteja su información exportando una copia o restaure información previa.
                     </p>
@@ -8924,7 +9009,7 @@ export default function App() {
                 <div className="p-8 flex-1 flex flex-col items-center justify-center text-center">
                   <h3 className="text-2xl font-bold text-gray-600 mb-2">Total a Cobrar</h3>
                   <div className="text-8xl font-black text-blue-700 mb-12">
-                    ${total.toFixed(2)}
+                    ${(Number(total) || 0).toFixed(2)}
                   </div>
 
                   {/* Métodos de Pago */}
@@ -9009,7 +9094,7 @@ export default function App() {
                           </div>
                           <div className="flex justify-between text-[10px] font-black uppercase text-gray-500 mt-1">
                             <span>Total de Venta:</span>
-                            <span>${total.toFixed(2)}</span>
+                            <span>${(Number(total) || 0).toFixed(2)}</span>
                           </div>
                         </div>
 
@@ -9795,7 +9880,7 @@ export default function App() {
       <footer className="max-w-[1800px] mx-auto px-4 lg:px-6 pb-12 flex flex-col sm:flex-row justify-between items-center gap-4 text-gray-400 font-bold text-sm">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <User size={16} /> Cajero: <span className="text-red-600">Izar Salas</span>
+            <User size={16} /> Cajero: <span className="text-red-600 italic uppercase">{currentUser?.name || 'Invitado'}</span>
           </div>
           <div className="h-4 w-px bg-gray-300" />
           <div className="flex items-center gap-2">
@@ -9803,7 +9888,7 @@ export default function App() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          Estado del Sistema: <span className="flex items-center gap-1 text-green-600"><CheckCircle size={14} /> En Línea</span>
+          Estado del Sistema: <span className="flex items-center gap-1 text-green-600"><CheckCircle size={14} /> {isSyncing ? 'Sincronizando...' : 'En Línea'}</span>
         </div>
       </footer>
 
