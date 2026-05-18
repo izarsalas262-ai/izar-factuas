@@ -1086,11 +1086,19 @@ export default function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem('yg_quotations', JSON.stringify(quotationsList));
+    try {
+      localStorage.setItem('yg_quotations', JSON.stringify(quotationsList));
+    } catch (e) {
+      console.error("LocalStorage save error (quotations):", e);
+    }
   }, [quotationsList]);
 
   useEffect(() => {
-    localStorage.setItem('yg_open_accounts', JSON.stringify(openAccounts));
+    try {
+      localStorage.setItem('yg_open_accounts', JSON.stringify(openAccounts));
+    } catch (e) {
+      console.error("LocalStorage save error (open_accounts):", e);
+    }
   }, [openAccounts]);
 
   useEffect(() => {
@@ -1845,6 +1853,7 @@ export default function App() {
   const [showCommonProductDialog, setShowCommonProductDialog] = useState(false);
   const [showNoteDialog, setShowNoteDialog] = useState(false);
   const [showTurnEmployeeDialog, setShowTurnEmployeeDialog] = useState(false);
+  const [isProcessingTurn, setIsProcessingTurn] = useState(false);
   const [selectedTurnEmployeeId, setSelectedTurnEmployeeId] = useState<number | null>(null);
   const [manualTurnEmployeeName, setManualTurnEmployeeName] = useState('');
   const [currentSaleEmployeeName, setCurrentSaleEmployeeName] = useState<string | null>(null);
@@ -2223,7 +2232,7 @@ export default function App() {
   const subtotalAfterDiscount = (subtotal || 0) - (customerDiscountAmount || 0);
   const tipAmount = ((subtotalAfterDiscount || 0) * (tipPercentage || 0)) / 100;
   const total = (subtotalAfterDiscount || 0) + (tipAmount || 0);
-  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const totalItems = cart.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 
   const handleHoldCart = () => {
     if (cart.length === 0) {
@@ -2847,14 +2856,24 @@ export default function App() {
   };
 
   const handlePrintTurnTicket = (account: OpenAccount) => {
+    if (!account) return;
+    
     try {
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) {
-        showMessage('No se pudo abrir la ventana de impresión. Por favor, permita las ventanas emergentes.', 'error');
-        return;
+      // Use hidden iframe for printing to avoid popup blockers and UI hangs
+      let printFrame = document.getElementById('print-iframe') as HTMLIFrameElement;
+      if (!printFrame) {
+        printFrame = document.createElement('iframe');
+        printFrame.id = 'print-iframe';
+        printFrame.style.position = 'fixed';
+        printFrame.style.right = '100%';
+        printFrame.style.bottom = '100%';
+        printFrame.style.width = '0';
+        printFrame.style.height = '0';
+        printFrame.style.border = 'none';
+        document.body.appendChild(printFrame);
       }
 
-    const size = ticketConfig.printSize || '80mm';
+      const size = ticketConfig.printSize || '80mm';
     const isOffice = size === 'office';
     const width = isOffice ? '210mm' : size;
     const padding = isOffice ? '20mm' : '5mm';
@@ -2930,19 +2949,32 @@ export default function App() {
             Presente este ticket para pagar su servicio.<br>
             ¡Gracias por preferirnos!
           </div>
-
-          <script>
-            setTimeout(() => {
-              window.print();
-              window.close();
-            }, 500);
-          </script>
         </body>
       </html>
     `;
 
-      printWindow.document.write(html);
-      printWindow.document.close();
+      const doc = printFrame.contentWindow?.document || printFrame.contentDocument;
+      if (doc) {
+        doc.open();
+        doc.write(html);
+        doc.close();
+        
+        // Wait for resources to load then print
+        setTimeout(() => {
+          try {
+            printFrame.contentWindow?.focus();
+            printFrame.contentWindow?.print();
+          } catch (e) {
+            console.error("Iframe print error:", e);
+            // Fallback to direct print if iframe fails (less desirable but ensures functionality)
+            const fallbackWindow = window.open('', '_blank');
+            if (fallbackWindow) {
+              fallbackWindow.document.write(html);
+              fallbackWindow.document.close();
+            }
+          }
+        }, 300);
+      }
     } catch (error) {
       console.error("Error printing turn ticket:", error);
       showMessage('Error al intentar imprimir el ticket', 'error');
@@ -2960,42 +2992,66 @@ export default function App() {
   };
 
   const handleConfirmGenerateTurn = () => {
+    if (isProcessingTurn) return;
+    setIsProcessingTurn(true);
+
     try {
-      const currentTurn = nextTurnNumber || 1;
-      const name = selectedCustomerId 
-        ? customersList.find(c => c.id === selectedCustomerId)?.name || `Turno #${currentTurn}`
-        : `Turno #${currentTurn}`;
+      // Capture current state values into local variables to avoid closure issues
+      const currentTurnNumber = Number(nextTurnNumber) || 1;
+      const currentCartItems = Array.isArray(cart) ? cart.map(item => ({ ...item })) : [];
+      const currentTotalValue = (typeof total === 'number' && !isNaN(total)) ? total : 0;
+      const currentCustomerId = selectedCustomerId;
+      const currentEmployeeName = (manualTurnEmployeeName || '').trim() || undefined;
+
+      if (currentCartItems.length === 0) {
+        showMessage('Seleccione servicios o productos antes de generar un turno', 'error');
+        setIsProcessingTurn(false);
+        return;
+      }
+
+      const foundCustomer = currentCustomerId 
+        ? (Array.isArray(customersList) ? customersList : []).find(c => c.id === currentCustomerId)
+        : null;
+      
+      const name = foundCustomer?.name || `Turno #${currentTurnNumber}`;
 
       const newAccount: OpenAccount = {
         id: Date.now(),
         name: name,
-        items: Array.isArray(cart) ? [...cart] : [],
-        total: (typeof total === 'number' && !isNaN(total)) ? total : 0,
+        items: currentCartItems,
+        total: currentTotalValue,
         createdAt: new Date().toISOString(),
-        customerId: selectedCustomerId,
-        turnNumber: currentTurn,
-        employeeName: (manualTurnEmployeeName || '').trim() || undefined
+        customerId: currentCustomerId,
+        turnNumber: currentTurnNumber,
+        employeeName: currentEmployeeName
       };
 
+      // Perform all state updates IMMEDIATELY to unblock UI
       setOpenAccounts(prev => Array.isArray(prev) ? [...prev, newAccount] : [newAccount]);
-      setNextTurnNumber(prev => {
-        const nextValue = (typeof prev === 'number' && !isNaN(prev)) ? prev + 1 : 2;
-        return nextValue;
-      });
-      
+      setNextTurnNumber(prev => (Number(prev) || 1) + 1);
       setCart([]);
       setSelectedCustomerId(null);
       setShowTurnEmployeeDialog(false);
       
-      // Delay printing slightly to ensure state updates don't feel "frozen"
+      // Give immediate feedback
+      showMessage(`Turno #${currentTurnNumber} generado exitosamente`, 'success');
+      
+      // Delay side effects like printing to ensure UI is ready
       setTimeout(() => {
-        handlePrintTurnTicket(newAccount);
-        showMessage(`Turno #${currentTurn} generado exitosamente`, 'success');
-      }, 100);
+        try {
+          handlePrintTurnTicket(newAccount);
+        } catch (printErr) {
+          console.error("Turn print error:", printErr);
+          // Don't show error to user here as the turn was already created successfully
+        }
+      }, 50);
       
     } catch (error) {
-      console.error("Error generating turn:", error);
-      showMessage('Error inesperado al generar el turno', 'error');
+      console.error("Turn generation crash:", error);
+      showMessage('Ocurrió un error crítico al procesar el turno', 'error');
+    } finally {
+      // Always reset processing state
+      setTimeout(() => setIsProcessingTurn(false), 500);
     }
   };
 
@@ -4253,7 +4309,7 @@ export default function App() {
                             <Clock size={12} /> Cuentas en Espera ({openAccounts.length})
                           </h4>
                           <div className="flex flex-wrap gap-2">
-                            {openAccounts.map(account => (
+                            {(Array.isArray(openAccounts) ? openAccounts : []).map(account => (
                               <button
                                 key={account.id}
                                 onClick={() => handleRecallAccount(account)}
@@ -4265,7 +4321,7 @@ export default function App() {
                                   </div>
                                 )}
                                 <span className="truncate max-w-[100px]">{account.name}</span>
-                                <span className="opacity-60">${account.total.toFixed(0)}</span>
+                                <span className="opacity-60">${(Number(account.total) || 0).toFixed(0)}</span>
                                 <div className="flex items-center gap-1">
                                   <div 
                                     className="hover:bg-black/10 p-1 rounded-full transition-colors"
@@ -9837,7 +9893,7 @@ export default function App() {
                 <div className="space-y-3">
                   <label className="text-[10px] font-black uppercase text-gray-400 tracking-widest block mb-2">O seleccione del personal:</label>
                   <div className="grid grid-cols-2 gap-3 max-h-48 overflow-y-auto p-1 custom-scrollbar">
-                    {usersList.map(user => (
+                    {(Array.isArray(usersList) ? usersList : []).map(user => (
                       <button
                         key={user.id}
                         onClick={() => {
@@ -9866,9 +9922,10 @@ export default function App() {
                 </button>
                 <button 
                   onClick={handleConfirmGenerateTurn}
-                  className="flex-1 bg-blue-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-[0_5px_0_0_rgba(29,78,216,1)] active:translate-y-1 active:shadow-none transition-all"
+                  disabled={isProcessingTurn || !manualTurnEmployeeName.trim()}
+                  className={`flex-1 ${isProcessingTurn || !manualTurnEmployeeName.trim() ? 'bg-gray-400 cursor-not-allowed shadow-none translate-y-1' : 'bg-blue-600 shadow-[0_5px_0_0_rgba(29,78,216,1)] active:translate-y-1 active:shadow-none'} text-white py-4 rounded-2xl font-black uppercase tracking-widest transition-all`}
                 >
-                  Generar Turno
+                  {isProcessingTurn ? 'Generando...' : 'Generar Turno'}
                 </button>
               </div>
             </motion.div>
